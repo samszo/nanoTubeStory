@@ -90,6 +90,45 @@ export class OmekaClient {
     await fetch(this._url(`/api/items/${id}`), { method: 'DELETE' });
   }
 
+  // ── Resource templates ─────────────────────────────────────────────
+
+  async listResourceTemplates() {
+    const items = await this._fetch(this._url('/api/resource_templates', 'per_page=50'));
+    return items.map(t => ({ id: t['o:id'], label: t['o:label'] || `Template #${t['o:id']}` }));
+  }
+
+  async getResourceTemplate(id) {
+    const t = await this._fetch(this._url(`/api/resource_templates/${id}`));
+    return {
+      id: t['o:id'],
+      label: t['o:label'],
+      properties: (t['o:resource_template_property'] || []).map(p => ({
+        term:  p['o:property']?.['o:term'] || '',
+        label: p['o:alternate_label'] || p['o:property']?.['o:label'] || p['o:property']?.['o:term'] || '',
+        type:  p['o:data_type']?.[0] || 'literal',
+      })),
+    };
+  }
+
+  async saveHexItem(hexData, itemSetId) {
+    const props = {};
+    (hexData.properties || []).forEach(({ term, value }) => {
+      if (value) props[term] = [{ '@value': value, type: 'literal' }];
+    });
+    const body = {
+      '@type': ['o:Item'],
+      'o:item_set': [{ 'o:id': itemSetId || this.itemSetId }],
+      'dcterms:title': [{ '@value': hexData.title || 'Hexagone nanotube', type: 'literal' }],
+      'dcterms:description': [{ '@value': JSON.stringify(hexData), type: 'literal' }],
+      'dcterms:subject': [{ '@value': 'nanotube:hex', type: 'literal' }],
+      ...props,
+    };
+    if (hexData.omekaId) {
+      return this._fetch(this._url(`/api/items/${hexData.omekaId}`), { method: 'PATCH', body: JSON.stringify(body) });
+    }
+    return this._fetch(this._url('/api/items'), { method: 'POST', body: JSON.stringify(body) });
+  }
+
   // ── Sérialisation ──────────────────────────────────────────────────
 
   _buildOmekaItem(mapData) {

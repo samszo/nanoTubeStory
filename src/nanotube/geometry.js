@@ -120,6 +120,64 @@ function buildCarbonLattice(nanotube, radius, height, segments) {
   return geo;
 }
 
+/**
+ * Construit des faces hexagonales invisibles sur la surface du tube,
+ * utilisées comme cibles pour le raycaster (clics interactifs).
+ * Chaque mesh porte userData.isHexFace, .hexFaceIdx, .hexFacePos.
+ */
+export function buildTubeHexFaces(nanotube, radius, height) {
+  const nHex = Math.max(6, nanotube.n + nanotube.m);
+  const circumference = 2 * Math.PI * radius;
+  const d   = circumference / (nHex * Math.sqrt(3));
+  const a1x = Math.sqrt(3) * d;
+  const a2y = 1.5 * d;
+  const s   = a1x / 2; // sqrt(3)*d/2
+
+  const iMax = Math.ceil(circumference / a1x) + 1;
+  const jMin = -Math.ceil(height / a2y) - 1;
+  const jMax =  Math.ceil(height / a2y) + 1;
+
+  // Sommets relatifs d'un anneau hexagonal (circumradius = d)
+  const rv = [[0,-d],[s,-d/2],[s,d/2],[0,d],[-s,d/2],[-s,-d/2]];
+
+  const meshes = [];
+  let idx = 0;
+
+  for (let i = 0; i < iMax; i++) {
+    for (let j = jMin; j <= jMax; j++) {
+      const cx = i * a1x + (((j % 2) + 2) % 2 ? a1x / 2 : 0);
+      const cy = d + j * a2y;
+      idx++;
+      if (cy + d < -height / 2 || cy - d > height / 2) continue;
+
+      // Projection des 6 sommets sur le cylindre
+      const pts = rv.map(([dx, dy]) => {
+        const theta = (cx + dx) / radius;
+        return new THREE.Vector3(Math.cos(theta) * radius, cy + dy, Math.sin(theta) * radius);
+      });
+
+      // Triangulation en éventail depuis pts[0] → 4 triangles
+      const verts = [];
+      for (let k = 1; k <= 4; k++) {
+        verts.push(...pts[0].toArray(), ...pts[k].toArray(), ...pts[k + 1].toArray());
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      geo.computeVertexNormals();
+
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide })
+      );
+      mesh.userData.isHexFace  = true;
+      mesh.userData.hexFaceIdx = idx - 1;
+      mesh.userData.hexFacePos = { i, j, cx, cy };
+      meshes.push(mesh);
+    }
+  }
+  return meshes;
+}
+
 /** Indique les unités de taille dans la scène */
 export const NM_SCALE = NM_TO_SCENE;
 

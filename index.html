@@ -160,6 +160,60 @@
     </div>
   </div>
 
+  <!-- HEX FACE PROPERTIES PANEL -->
+  <div id="hex-face-panel" class="hidden">
+    <div class="hex-face-header">
+      <span id="hex-face-title">Hexagone du nanotube</span>
+      <button id="hex-face-close" class="btn btn-icon">✕</button>
+    </div>
+    <div class="hex-face-body">
+      <div class="hex-face-info">
+        <span class="prop-label">Tube</span><span id="hf-tube-key">—</span>
+        <span class="prop-label">Position</span><span id="hf-position">—</span>
+      </div>
+
+      <!-- Template Omeka S -->
+      <div class="panel-section">
+        <h4>Template Omeka S</h4>
+        <div class="field-group">
+          <label>Resource template
+            <select id="hf-template-select">
+              <option value="">— Choisir un template —</option>
+            </select>
+          </label>
+        </div>
+        <div id="hf-template-fields" class="field-group"></div>
+        <div class="field-actions">
+          <button id="hf-save-omeka" class="btn btn-primary btn-sm">Sauver dans Omeka S</button>
+        </div>
+        <div id="hf-omeka-status" class="hf-status"></div>
+      </div>
+
+      <!-- Nanotube horizontal -->
+      <div class="panel-section">
+        <h4>Nanotube horizontal</h4>
+        <p class="text-muted" style="margin-bottom:8px">Émettre un nanotube depuis cet hexagone.</p>
+        <div id="hf-horiz-diameter-info" class="text-muted" style="font-size:11px;margin-bottom:6px"></div>
+        <div class="field-group">
+          <label>Chiralité (m, n)
+            <div class="input-row">
+              <input type="number" id="hf-horiz-m" value="5" min="0" max="20" />
+              <input type="number" id="hf-horiz-n" value="5" min="0" max="20" />
+            </div>
+          </label>
+          <label>Longueur (nm)
+            <input type="range" id="hf-horiz-length" value="20" min="5" max="100" step="1" />
+            <span id="hf-horiz-length-val">20</span>
+          </label>
+          <label>Couleur <input type="color" id="hf-horiz-color" value="#818cf8" /></label>
+        </div>
+        <div class="field-actions">
+          <button id="hf-spawn-tube" class="btn btn-primary btn-sm">⬡ Créer nanotube</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- SETTINGS PANEL -->
   <div id="settings-panel" class="hidden">
     <div class="settings-header">

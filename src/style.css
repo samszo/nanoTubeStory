@@ -242,3 +242,43 @@ select { cursor: pointer; }
 /* ── Grid input section ── */
 #panel-left .panel-section { padding: 8px 10px; }
 #panel-left .panel-section label { margin-bottom: 5px; }
+
+/* ── Hex Face Panel ── */
+#hex-face-panel {
+  position: fixed;
+  top: var(--header-h);
+  right: 0;
+  width: 300px;
+  height: calc(100vh - var(--header-h));
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  transform: translateX(0);
+  transition: transform 0.2s ease;
+  overflow-y: auto;
+}
+#hex-face-panel.hidden { transform: translateX(100%); }
+.hex-face-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.hex-face-body { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.hex-face-info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hex-face-info .prop-label { color: var(--text-muted); }
+.hex-face-info span:nth-child(even) { color: var(--text); }
+.hf-status { font-size: 11px; margin-top: 4px; color: var(--green); min-height: 16px; }

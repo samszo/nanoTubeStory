@@ -16,11 +16,14 @@ export class App {
     this.charts   = null;
     this.omeka    = new OmekaClient();
     this.tubes    = new Map();   // hexKey → Nanotube
+    this.horizTubes = new Map(); // `${hexKey}:${hexFaceIdx}` → THREE.Group (nanotubes horizontaux)
+    this.hexFaceData = new Map(); // `${hexKey}:${hexFaceIdx}` → { omekaId, properties }
     this.selectedKey = null;
     this.currentMapId = null;
     this.gridRadius   = 5;
     this.orientation  = 'pointy';
     this.view = '3d';
+    this._activeHexFace = null; // { hexKey, hexFaceIdx, hexFacePos, worldPos }
   }
 
   init() {
@@ -53,6 +56,7 @@ export class App {
       this.hexMap.selectHex(key);
       this._onHexSelect(key);
     });
+    this.scene3d.onTubeHexSelect(info => this._onTubeHexSelect(info));
   }
 
   _initCharts() {
@@ -150,6 +154,152 @@ export class App {
     });
     this._setTube(this.selectedKey, updated);
     this._updateTubeEditor(updated);
+  }
+
+  // ── Clic sur hexagone du tube ──────────────────────────────────────
+
+  _onTubeHexSelect({ hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld }) {
+    this._activeHexFace = { hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld };
+    const faceKey = `${hexKey}:${hexFaceIdx}`;
+
+    document.getElementById('hf-tube-key').textContent = hexKey;
+    document.getElementById('hf-position').textContent = `i=${hexFacePos.i} j=${hexFacePos.j}`;
+
+    // Calculer les indices du nanotube enfant depuis le cercle inscrit de l'hexagone
+    const { m: childM, n: childN, diameterNm } = this._computeChildTubeChirality(hexKey);
+    document.getElementById('hf-horiz-m').value = childM;
+    document.getElementById('hf-horiz-n').value = childN;
+    document.getElementById('hf-horiz-diameter-info').textContent =
+      `⌀ inscrit ≈ ${diameterNm.toFixed(3)} nm`;
+
+    // Pré-remplir les champs si données déjà saisies
+    const saved = this.hexFaceData.get(faceKey) || {};
+    document.getElementById('hf-template-select').value = saved.templateId || '';
+    if (saved.templateId) this._renderTemplateFields(saved.properties || []);
+
+    document.getElementById('hf-omeka-status').textContent = '';
+    document.getElementById('hex-face-panel').classList.remove('hidden');
+
+    // Charger les templates si pas encore fait
+    this._loadTemplates();
+  }
+
+  /** Calcule les indices chiraux (armchair) dont le diamètre = cercle inscrit de l'hexagone parent */
+  _computeChildTubeChirality(hexKey) {
+    // Cherche d'abord dans les tubes de la grille, ensuite dans les tubes horizontaux
+    const tube = this.tubes.get(hexKey)
+               || (this.horizTubesData && this.horizTubesData.get(hexKey));
+    if (!tube) return { m: 5, n: 5, diameterNm: 0 };
+    const NM_TO_SCENE = 2.5;
+    const nHex = Math.max(6, tube.n + tube.m);
+    const radius = tube.diameter * NM_TO_SCENE * 8 / 2;
+    const circumference = 2 * Math.PI * radius;
+    const d_scene = circumference / (nHex * Math.sqrt(3));
+    // Diamètre du cercle inscrit de l'hexagone (apothème × 2 = sqrt(3)*d)
+    const inscribed_d_nm = Math.sqrt(3) * d_scene / (NM_TO_SCENE * 8);
+    // Armchair (n,n) : diameter = a0*sqrt(3)*n/π → n = π*d/(a0*sqrt(3))
+    const n = Math.max(1, Math.round(Math.PI * inscribed_d_nm / (0.246 * Math.sqrt(3))));
+    return { m: n, n, diameterNm: inscribed_d_nm };
+  }
+
+  async _loadTemplates() {
+    const sel = document.getElementById('hf-template-select');
+    if (sel.options.length > 1) return; // déjà chargés
+    try {
+      const templates = await this.omeka.listResourceTemplates();
+      templates.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = t.label;
+        sel.appendChild(opt);
+      });
+    } catch {
+      // Omeka non connecté : on laisse juste la valeur vide
+    }
+  }
+
+  async _onTemplateChange(templateId) {
+    document.getElementById('hf-template-fields').innerHTML = '';
+    if (!templateId) return;
+    try {
+      const tpl = await this.omeka.getResourceTemplate(templateId);
+      const faceKey = `${this._activeHexFace?.hexKey}:${this._activeHexFace?.hexFaceIdx}`;
+      const saved = this.hexFaceData.get(faceKey) || {};
+      this._renderTemplateFields(tpl.properties, saved.properties);
+    } catch (e) {
+      document.getElementById('hf-template-fields').innerHTML =
+        `<span style="color:var(--red);font-size:11px">Erreur template: ${e.message}</span>`;
+    }
+  }
+
+  _renderTemplateFields(properties, savedValues = []) {
+    const container = document.getElementById('hf-template-fields');
+    container.innerHTML = '';
+    properties.forEach(p => {
+      const saved = savedValues.find(s => s.term === p.term);
+      const label = document.createElement('label');
+      label.textContent = p.label || p.term;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.dataset.term = p.term;
+      input.value = saved?.value || '';
+      label.appendChild(input);
+      container.appendChild(label);
+    });
+  }
+
+  async _saveHexToOmeka() {
+    if (!this._activeHexFace) return;
+    const { hexKey, hexFaceIdx, hexFacePos } = this._activeHexFace;
+    const faceKey = `${hexKey}:${hexFaceIdx}`;
+    const templateId = document.getElementById('hf-template-select').value;
+    const inputs = document.querySelectorAll('#hf-template-fields input[data-term]');
+    const properties = Array.from(inputs).map(inp => ({ term: inp.dataset.term, value: inp.value }));
+    const saved = this.hexFaceData.get(faceKey) || {};
+
+    const hexData = {
+      omekaId: saved.omekaId || null,
+      templateId,
+      title: `Hex ${hexKey} [${hexFacePos.i},${hexFacePos.j}]`,
+      hexKey, hexFaceIdx, hexFacePos,
+      properties,
+    };
+
+    const status = document.getElementById('hf-omeka-status');
+    status.textContent = 'Sauvegarde…';
+    try {
+      const result = await this.omeka.saveHexItem(hexData);
+      hexData.omekaId = result?.['o:id'] || hexData.omekaId;
+      this.hexFaceData.set(faceKey, hexData);
+      status.textContent = `✓ Sauvegardé (Omeka #${hexData.omekaId})`;
+    } catch (e) {
+      status.style.color = 'var(--red)';
+      status.textContent = `✗ ${e.message}`;
+    }
+  }
+
+  _spawnHorizontalTube() {
+    if (!this._activeHexFace) return;
+    const { hexKey, hexFaceIdx, hexCenterWorld, hexNormalWorld } = this._activeHexFace;
+    const faceKey = `${hexKey}:${hexFaceIdx}`;
+
+    const m      = parseInt(document.getElementById('hf-horiz-m').value) || 5;
+    const n      = parseInt(document.getElementById('hf-horiz-n').value) || 5;
+    const length = parseFloat(document.getElementById('hf-horiz-length').value) || 20;
+    const color  = document.getElementById('hf-horiz-color').value;
+
+    // Utiliser le centre et la normale exacts calculés lors du clic
+    const center = hexCenterWorld || { x: 0, y: 0, z: 0 };
+    const normal = hexNormalWorld || { x: 1, y: 0, z: 0 };
+
+    const tube  = new Nanotube({ m, n, length, color, rotation: 0 });
+    const group = this.scene3d.addHorizontalTube(tube, center, normal, faceKey);
+    this.horizTubes.set(faceKey, group);
+    this.horizTubesData = this.horizTubesData || new Map();
+    this.horizTubesData.set(faceKey, tube);
+
+    document.getElementById('hex-face-panel').classList.add('hidden');
+    this._agentLog('system', `⬡ Nanotube (${m},${n}) depuis hex ${faceKey}`);
   }
 
   // ── Vue ────────────────────────────────────────────────────────────
@@ -429,6 +579,19 @@ export class App {
     document.getElementById('btn-save-settings').addEventListener('click', () => this._saveSettings());
     document.getElementById('settings-close').addEventListener('click', () => {
       document.getElementById('settings-panel').classList.add('hidden');
+    });
+
+    // Hex face panel
+    document.getElementById('hex-face-close').addEventListener('click', () => {
+      document.getElementById('hex-face-panel').classList.add('hidden');
+    });
+    document.getElementById('hf-template-select').addEventListener('change', e => {
+      this._onTemplateChange(e.target.value);
+    });
+    document.getElementById('hf-save-omeka').addEventListener('click', () => this._saveHexToOmeka());
+    document.getElementById('hf-spawn-tube').addEventListener('click', () => this._spawnHorizontalTube());
+    document.getElementById('hf-horiz-length').addEventListener('input', e => {
+      document.getElementById('hf-horiz-length-val').textContent = e.target.value;
     });
 
     // Modal

@@ -3,7 +3,8 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { buildNanotubeGroup, buildHexBase, buildHexOutline } from '../nanotube/geometry.js';
+import { buildNanotubeGroup, buildHexBase, buildHexOutline, buildTubeHexFaces, NM_SCALE } from '../nanotube/geometry.js';
+const NM_TO_SCENE = NM_SCALE;
 import { Layout, LAYOUT_POINTY, LAYOUT_FLAT, Point } from '../hex/hex.js';
 
 const HEX_SIZE_3D = 14; // unités scène pour la taille d'un hexagone
@@ -17,7 +18,9 @@ export class Scene3D {
     this.showGrid    = true;
     this.showLabels  = false;
     this.orientation = 'pointy';
-    this._onSelectCallbacks = [];
+    this._onSelectCallbacks    = [];
+    this._onTubeHexCallbacks   = [];
+    this.hexFaceObjects = new Map(); // hexKey → [Mesh, ...]
 
     this._initRenderer();
     this._initScene();
@@ -106,6 +109,49 @@ export class Scene3D {
     this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // Priorité 1 : clic sur une face hexagonale de tube
+    const faceTargets = [];
+    this.hexFaceObjects.forEach(meshes => faceTargets.push(...meshes));
+    const faceHits = this.raycaster.intersectObjects(faceTargets);
+    if (faceHits.length > 0) {
+      const mesh   = faceHits[0].object;
+      const hexKey = mesh.userData.tubeHexKey;
+      if (hexKey && mesh.parent) {
+        const nanotube    = mesh.parent.userData.nanotube;
+        const hexFacePos  = mesh.userData.hexFacePos;
+
+        // Centre de l'hexagone et normale sortante calculés en espace monde
+        let hexCenterWorld = faceHits[0].point.clone();
+        let hexNormalWorld = faceHits[0].point.clone()
+          .sub(mesh.parent.position).setY(0).normalize();
+
+        if (nanotube && hexFacePos) {
+          const r     = nanotube.diameter * NM_TO_SCENE * 8 / 2;
+          const theta = hexFacePos.cx / r;
+          // Centre de la face en coordonnées locales du tube
+          const localCenter = new THREE.Vector3(
+            Math.cos(theta) * r, hexFacePos.cy, Math.sin(theta) * r
+          );
+          hexCenterWorld = localCenter.clone().applyMatrix4(mesh.parent.matrixWorld);
+          // Normale sortante (direction radiale en XZ dans l'espace local)
+          hexNormalWorld = new THREE.Vector3(Math.cos(theta), 0, Math.sin(theta))
+            .transformDirection(mesh.parent.matrixWorld).normalize();
+        }
+
+        this._onTubeHexCallbacks.forEach(cb => cb({
+          hexKey,
+          hexFaceIdx:    mesh.userData.hexFaceIdx,
+          hexFacePos,
+          worldPos:      faceHits[0].point,
+          hexCenterWorld,
+          hexNormalWorld,
+        }));
+        return;
+      }
+    }
+
+    // Priorité 2 : clic sur une cellule de la grille hexagonale
     const pickObjects = [];
     this.hexObjects.forEach(g => pickObjects.push(...g.children));
     const hits = this.raycaster.intersectObjects(pickObjects);
@@ -132,6 +178,8 @@ export class Scene3D {
   }
 
   onSelect(cb) { this._onSelectCallbacks.push(cb); }
+
+  onTubeHexSelect(cb) { this._onTubeHexCallbacks.push(cb); }
 
   // ── Grille hexagonale ──────────────────────────────────────────────
 
@@ -181,6 +229,18 @@ export class Scene3D {
     this.scene.add(tubeGroup);
     this.tubeObjects.set(hexKey, tubeGroup);
 
+    // Faces hexagonales cliquables sur la surface du tube
+    const diameter = nanotube.diameter * NM_TO_SCENE * 8;
+    const radius   = diameter / 2;
+    const height   = nanotube.length * NM_TO_SCENE;
+    const faces = buildTubeHexFaces(nanotube, radius, height);
+    faces.forEach(m => {
+      m.userData.tubeHexKey = hexKey;
+      // Les faces sont en coordonnées locales du tube → ajouter au groupe
+      tubeGroup.add(m);
+    });
+    this.hexFaceObjects.set(hexKey, faces);
+
     // Illuminer la base
     const base = hexGroup.children.find(c => c.userData.isBase);
     if (base) {
@@ -196,6 +256,7 @@ export class Scene3D {
       existing.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
       this.tubeObjects.delete(hexKey);
     }
+    this.hexFaceObjects.delete(hexKey);
     const hexGroup = this.hexObjects.get(hexKey);
     if (hexGroup) {
       const base = hexGroup.children.find(c => c.userData.isBase);
@@ -204,6 +265,46 @@ export class Scene3D {
   }
 
   updateTube(hexKey, nanotube) { this.setTube(hexKey, nanotube); }
+
+  /**
+   * Ajoute un nanotube enfant :
+   * - centré sur hexCenter (centre exact de l'hexagone parent)
+   * - orienté selon hexNormal (perpendiculaire à la face de l'hexagone)
+   * - sa base (extrémité proche) commence à la surface du tube parent
+   */
+  addHorizontalTube(nanotube, hexCenter, hexNormal, faceKey) {
+    const group = buildNanotubeGroup(nanotube);
+
+    // Aligner l'axe Y du tube sur la normale sortante
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const dir   = new THREE.Vector3(hexNormal.x, hexNormal.y, hexNormal.z).normalize();
+    group.quaternion.setFromUnitVectors(yAxis, dir);
+
+    // Positionner : base à hexCenter, tube s'étend vers l'extérieur
+    // Le centre du groupe est décalé de halfLen dans la direction normale
+    const halfLen = nanotube.length * NM_TO_SCENE / 2;
+    group.position.set(
+      hexCenter.x + dir.x * halfLen,
+      hexCenter.y + dir.y * halfLen,
+      hexCenter.z + dir.z * halfLen
+    );
+
+    this.scene.add(group);
+    group.userData.faceKey = faceKey;
+
+    // Faces hexagonales cliquables — mêmes règles que setTube
+    const diameter = nanotube.diameter * NM_TO_SCENE * 8;
+    const radius   = diameter / 2;
+    const height   = nanotube.length * NM_TO_SCENE;
+    const faces    = buildTubeHexFaces(nanotube, radius, height);
+    faces.forEach(m => {
+      m.userData.tubeHexKey = faceKey; // clé = faceKey du tube parent
+      group.add(m);
+    });
+    this.hexFaceObjects.set(faceKey, faces);
+
+    return group;
+  }
 
   highlightTube(hexKey) {
     this.tubeObjects.forEach((g, k) => {
