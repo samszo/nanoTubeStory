@@ -1,0 +1,258 @@
+/**
+ * Gestionnaire de la scène Three.js 3D
+ */
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { buildNanotubeGroup, buildHexBase, buildHexOutline } from '../nanotube/geometry.js';
+import { Layout, LAYOUT_POINTY, LAYOUT_FLAT, Point } from '../hex/hex.js';
+
+const HEX_SIZE_3D = 14; // unités scène pour la taille d'un hexagone
+
+export class Scene3D {
+  constructor(canvas) {
+    this.canvas    = canvas;
+    this.tubeObjects = new Map(); // hexKey → THREE.Group
+    this.hexObjects  = new Map(); // hexKey → THREE.Group (base + outline)
+    this.selectedKey = null;
+    this.showGrid    = true;
+    this.showLabels  = false;
+    this.orientation = 'pointy';
+    this._onSelectCallbacks = [];
+
+    this._initRenderer();
+    this._initScene();
+    this._initCamera();
+    this._initControls();
+    this._initLights();
+    this._initRaycaster();
+    this._animate();
+  }
+
+  _initRenderer() {
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      alpha: false,
+    });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setClearColor(0x0a0e17);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.2;
+
+    this._resizeObserver = new ResizeObserver(() => this._onResize());
+    this._resizeObserver.observe(this.canvas.parentElement);
+    this._onResize();
+  }
+
+  _initScene() {
+    this.scene = new THREE.Scene();
+    this.scene.fog = new THREE.Fog(0x0a0e17, 400, 900);
+
+    // Grille de fond
+    this.gridHelper = new THREE.GridHelper(400, 40, 0x1e2736, 0x1e2736);
+    this.scene.add(this.gridHelper);
+  }
+
+  _initCamera() {
+    const w = this.canvas.clientWidth  || 800;
+    const h = this.canvas.clientHeight || 600;
+    this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 2000);
+    this.camera.position.set(80, 120, 160);
+    this.camera.lookAt(0, 30, 0);
+  }
+
+  _initControls() {
+    this.controls = new OrbitControls(this.camera, this.canvas);
+    this.controls.enableDamping  = true;
+    this.controls.dampingFactor  = 0.08;
+    this.controls.maxPolarAngle  = Math.PI / 1.8;
+    this.controls.minDistance    = 20;
+    this.controls.maxDistance    = 600;
+    this.controls.target.set(0, 20, 0);
+  }
+
+  _initLights() {
+    const ambient = new THREE.AmbientLight(0x334466, 0.8);
+    this.scene.add(ambient);
+
+    const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+    sun.position.set(100, 200, 100);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.far = 800;
+    this.scene.add(sun);
+
+    const fill = new THREE.DirectionalLight(0x4488ff, 0.5);
+    fill.position.set(-100, 50, -100);
+    this.scene.add(fill);
+
+    // Point lights colorés
+    const pl1 = new THREE.PointLight(0x22d3ee, 0.6, 200);
+    pl1.position.set(0, 80, 0);
+    this.scene.add(pl1);
+  }
+
+  _initRaycaster() {
+    this.raycaster = new THREE.Raycaster();
+    this.mouse = new THREE.Vector2();
+    this.canvas.addEventListener('click', e => this._onCanvasClick(e));
+  }
+
+  _onCanvasClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const pickObjects = [];
+    this.hexObjects.forEach(g => pickObjects.push(...g.children));
+    const hits = this.raycaster.intersectObjects(pickObjects);
+    if (hits.length > 0) {
+      const hexKey = hits[0].object.parent?.userData?.hexKey;
+      if (hexKey) this._selectHex(hexKey);
+    }
+  }
+
+  _selectHex(hexKey) {
+    // Reset précédent
+    if (this.selectedKey) {
+      const prev = this.hexObjects.get(this.selectedKey);
+      if (prev) prev.children.forEach(c => {
+        if (c.material?.color && c.userData.isBase) c.material.opacity = 0.08;
+      });
+    }
+    this.selectedKey = hexKey;
+    const curr = this.hexObjects.get(hexKey);
+    if (curr) curr.children.forEach(c => {
+      if (c.material && c.userData.isBase) c.material.opacity = 0.25;
+    });
+    this._onSelectCallbacks.forEach(cb => cb(hexKey));
+  }
+
+  onSelect(cb) { this._onSelectCallbacks.push(cb); }
+
+  // ── Grille hexagonale ──────────────────────────────────────────────
+
+  buildGrid(hexes, orientStr = 'pointy') {
+    this.orientation = orientStr;
+    const orient = orientStr === 'flat' ? LAYOUT_FLAT : LAYOUT_POINTY;
+    this.layout3d = new Layout(orient, new Point(HEX_SIZE_3D, HEX_SIZE_3D), new Point(0, 0));
+
+    // Supprimer anciens
+    this.hexObjects.forEach(g => this.scene.remove(g));
+    this.hexObjects.clear();
+
+    hexes.forEach(h => {
+      const center = this.layout3d.hexToPixel(h);
+      const corners = this.layout3d.polygonCorners(h);
+      const group = new THREE.Group();
+      group.userData.hexKey = h.key();
+      group.position.set(center.x, 0, center.y);
+
+      // Base hexagonale
+      const relCorners = corners.map(c => new Point(c.x - center.x, c.y - center.y));
+      const base = buildHexBase(relCorners, 0x22d3ee);
+      base.rotation.x = -Math.PI / 2;
+      base.userData.isBase = true;
+      group.add(base);
+
+      // Contour
+      const outline = buildHexOutline(relCorners, 0x2d3a4f);
+      group.add(outline);
+
+      this.scene.add(group);
+      this.hexObjects.set(h.key(), group);
+    });
+  }
+
+  // ── Nanotubes ──────────────────────────────────────────────────────
+
+  setTube(hexKey, nanotube) {
+    this.removeTube(hexKey);
+
+    const hexGroup = this.hexObjects.get(hexKey);
+    if (!hexGroup) return;
+
+    const tubeGroup = buildNanotubeGroup(nanotube);
+    const h = nanotube.length * 2.5 / 2;
+    tubeGroup.position.set(hexGroup.position.x, h, hexGroup.position.z);
+    this.scene.add(tubeGroup);
+    this.tubeObjects.set(hexKey, tubeGroup);
+
+    // Illuminer la base
+    const base = hexGroup.children.find(c => c.userData.isBase);
+    if (base) {
+      base.material.opacity = 0.18;
+      base.material.color.set(nanotube.color);
+    }
+  }
+
+  removeTube(hexKey) {
+    const existing = this.tubeObjects.get(hexKey);
+    if (existing) {
+      this.scene.remove(existing);
+      existing.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+      this.tubeObjects.delete(hexKey);
+    }
+    const hexGroup = this.hexObjects.get(hexKey);
+    if (hexGroup) {
+      const base = hexGroup.children.find(c => c.userData.isBase);
+      if (base) { base.material.opacity = 0.08; base.material.color.set(0x22d3ee); }
+    }
+  }
+
+  updateTube(hexKey, nanotube) { this.setTube(hexKey, nanotube); }
+
+  highlightTube(hexKey) {
+    this.tubeObjects.forEach((g, k) => {
+      g.traverse(c => { if (c.material?.emissive) c.material.emissive.set(k === hexKey ? 0x226644 : 0x000000); });
+    });
+  }
+
+  // ── Toggle aides visuelles ─────────────────────────────────────────
+
+  toggleGrid(show) {
+    this.showGrid = show ?? !this.showGrid;
+    this.gridHelper.visible = this.showGrid;
+    this.hexObjects.forEach(g => { g.children.filter(c => !c.userData.isBase).forEach(c => c.visible = this.showGrid); });
+  }
+
+  resetCamera() {
+    this.camera.position.set(80, 120, 160);
+    this.controls.target.set(0, 20, 0);
+    this.controls.update();
+  }
+
+  screenshot() {
+    this.renderer.render(this.scene, this.camera);
+    return this.canvas.toDataURL('image/png');
+  }
+
+  _onResize() {
+    const el = this.canvas.parentElement;
+    if (!el) return;
+    const w = el.clientWidth, h = el.clientHeight;
+    this.renderer.setSize(w, h, false);
+    if (this.camera) {
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  _animate() {
+    requestAnimationFrame(() => this._animate());
+    this.controls.update();
+    // Rotation douce des tubes si aucun n'est sélectionné
+    if (!this.selectedKey) {
+      this.tubeObjects.forEach(g => { g.rotation.y += 0.002; });
+    }
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  dispose() {
+    this._resizeObserver.disconnect();
+    this.renderer.dispose();
+  }
+}

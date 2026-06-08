@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NanoTubeStory — Cartographies 3D</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- HEADER -->
+    <header id="header">
+      <div class="logo">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-text">NanoTubeStory</span>
+      </div>
+      <nav class="toolbar">
+        <button id="btn-new-map" class="btn btn-primary" title="Nouvelle cartographie">+ Carte</button>
+        <button id="btn-save-map" class="btn" title="Sauvegarder (Omeka S)">💾 Sauver</button>
+        <button id="btn-load-map" class="btn" title="Charger depuis Omeka S">📂 Charger</button>
+        <button id="btn-export" class="btn" title="Exporter la scène 3D">⬇ Exporter</button>
+        <div class="separator"></div>
+        <button id="btn-view-3d" class="btn btn-active" title="Vue 3D">3D</button>
+        <button id="btn-view-hex" class="btn" title="Vue hexagonale 2D">Hex</button>
+        <button id="btn-view-split" class="btn" title="Vue fractionnée">⊞</button>
+      </nav>
+      <div class="header-right">
+        <span id="status-indicator" class="status-dot status-ok" title="Connexion Omeka S"></span>
+        <span id="status-label">Omeka S</span>
+        <button id="btn-settings" class="btn btn-icon" title="Paramètres">⚙</button>
+      </div>
+    </header>
+
+    <!-- MAIN LAYOUT -->
+    <div id="main-layout">
+
+      <!-- LEFT PANEL — Hex Map 2D -->
+      <aside id="panel-left">
+        <div class="panel-header">
+          <h3>Cartographie</h3>
+          <div class="panel-actions">
+            <button id="btn-add-tube" class="btn btn-sm btn-primary">+ Nanotube</button>
+            <button id="btn-clear-selection" class="btn btn-sm">✕</button>
+          </div>
+        </div>
+        <div id="hex-canvas-container">
+          <svg id="hex-svg"></svg>
+        </div>
+        <div class="panel-section">
+          <h4>Grille</h4>
+          <label>Rayon (hexs) <input type="number" id="input-grid-radius" value="5" min="1" max="15" /></label>
+          <label>Orientation
+            <select id="input-grid-orient">
+              <option value="pointy">Pointy-top</option>
+              <option value="flat">Flat-top</option>
+            </select>
+          </label>
+        </div>
+      </aside>
+
+      <!-- CENTER — Three.js 3D Scene -->
+      <main id="viewport">
+        <div id="canvas-3d-container">
+          <canvas id="canvas-3d"></canvas>
+        </div>
+        <div id="overlay-info">
+          <span id="selected-hex-label">Aucune cellule sélectionnée</span>
+        </div>
+        <div id="viewport-controls">
+          <button class="btn btn-sm" id="btn-reset-camera" title="Réinitialiser la caméra">⌖</button>
+          <button class="btn btn-sm" id="btn-toggle-grid" title="Afficher/masquer la grille">⊞</button>
+          <button class="btn btn-sm" id="btn-toggle-labels" title="Afficher/masquer les étiquettes">A</button>
+          <button class="btn btn-sm" id="btn-screenshot" title="Capture d'écran">📷</button>
+        </div>
+      </main>
+
+      <!-- RIGHT PANEL — Properties + Charts -->
+      <aside id="panel-right">
+        <div class="panel-header">
+          <h3>Propriétés</h3>
+        </div>
+
+        <!-- Nanotube editor -->
+        <div id="tube-editor" class="panel-section">
+          <h4>Nanotube sélectionné</h4>
+          <div class="field-group">
+            <label>Chiralité (m, n)
+              <div class="input-row">
+                <input type="number" id="input-m" value="5" min="0" max="20" />
+                <input type="number" id="input-n" value="5" min="0" max="20" />
+              </div>
+            </label>
+            <label>Type <span id="tube-type-badge" class="badge badge-armchair">Armchair</span></label>
+            <label>Longueur (nm) <input type="range" id="input-length" value="20" min="5" max="100" step="1" /> <span id="length-val">20</span></label>
+            <label>Rotation (°) <input type="range" id="input-rotation" value="0" min="0" max="360" step="1" /> <span id="rotation-val">0</span></label>
+            <label>Couleur <input type="color" id="input-color" value="#4ade80" /></label>
+          </div>
+          <div class="computed-props">
+            <div class="prop-item"><span class="prop-label">Diamètre</span><span id="prop-diameter" class="prop-value">—</span></div>
+            <div class="prop-item"><span class="prop-label">Conductivité</span><span id="prop-conductivity" class="prop-value">—</span></div>
+            <div class="prop-item"><span class="prop-label">Band gap</span><span id="prop-bandgap" class="prop-value">—</span></div>
+          </div>
+          <div class="field-actions">
+            <button id="btn-apply-tube" class="btn btn-primary btn-sm">Appliquer</button>
+            <button id="btn-delete-tube" class="btn btn-danger btn-sm">Supprimer</button>
+          </div>
+        </div>
+
+        <!-- D3 Charts -->
+        <div class="panel-section">
+          <h4>Analyse</h4>
+          <div id="chart-distribution"></div>
+          <div id="chart-properties"></div>
+        </div>
+
+        <!-- Omeka S record -->
+        <div class="panel-section" id="omeka-panel">
+          <h4>Omeka S</h4>
+          <div id="omeka-item-info" class="omeka-info">
+            <span class="omeka-label">ID</span><span id="omeka-item-id">—</span>
+            <span class="omeka-label">Titre</span>
+            <input type="text" id="omeka-item-title" placeholder="Titre de la carte…" />
+          </div>
+          <div id="omeka-list"></div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- BOTTOM — Mastra Agent Console -->
+    <div id="agent-panel">
+      <div class="agent-header" id="agent-toggle">
+        <span>🤖 Agent Mastra</span>
+        <span id="agent-status" class="badge badge-idle">En attente</span>
+        <button class="btn btn-sm" id="btn-collapse-agent">▲</button>
+      </div>
+      <div id="agent-body">
+        <div id="agent-messages"></div>
+        <div class="agent-input-row">
+          <input type="text" id="agent-input" placeholder="Demandez à l'agent d'analyser ou générer une configuration…" />
+          <button id="btn-agent-send" class="btn btn-primary">Envoyer</button>
+          <button id="btn-agent-suggest" class="btn">💡 Suggérer</button>
+          <button id="btn-agent-optimize" class="btn">⚡ Optimiser</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALS -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal-box">
+      <div id="modal-header">
+        <h3 id="modal-title">Charger une cartographie</h3>
+        <button id="modal-close" class="btn btn-icon">✕</button>
+      </div>
+      <div id="modal-content"></div>
+      <div id="modal-footer">
+        <button id="modal-confirm" class="btn btn-primary">Confirmer</button>
+        <button id="modal-cancel" class="btn">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
+  <div id="settings-panel" class="hidden">
+    <div class="settings-header">
+      <h3>Paramètres</h3>
+      <button id="settings-close" class="btn btn-icon">✕</button>
+    </div>
+    <div class="settings-body">
+      <h4>Omeka S</h4>
+      <label>URL API <input type="text" id="set-omeka-url" placeholder="http://omeka.example.com/api" /></label>
+      <label>Key Identity <input type="text" id="set-omeka-key-id" /></label>
+      <label>Key Credential <input type="password" id="set-omeka-key-cred" /></label>
+      <label>Item Set ID <input type="number" id="set-omeka-set-id" value="1" /></label>
+      <h4>Anthropic</h4>
+      <label>API Key <input type="password" id="set-anthropic-key" placeholder="sk-ant-…" /></label>
+      <button id="btn-save-settings" class="btn btn-primary">Enregistrer</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
