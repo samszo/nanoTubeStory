@@ -73,28 +73,45 @@ export function buildNanotubeGroup(nanotube) {
 
 function buildCarbonLattice(nanotube, radius, height, segments) {
   const positions = [];
-  const rows = Math.max(6, Math.round(height / 1.2));
-  const cols = segments;
+  const circumference = 2 * Math.PI * radius;
 
-  // Approximation du réseau hexagonal enroulé autour du cylindre
-  for (let row = 0; row < rows; row++) {
-    const y = -height / 2 + (row / rows) * height;
-    const yNext = -height / 2 + ((row + 1) / rows) * height;
-    const offset = (row % 2) * 0.5;
+  // Nombre d'hexagones autour de la circonférence déterminé par la chiralité
+  const nHex = Math.max(6, nanotube.n + nanotube.m);
 
-    for (let col = 0; col < cols; col++) {
-      const a1 = ((col + offset) / cols) * Math.PI * 2;
-      const a2 = ((col + 1 + offset) / cols) * Math.PI * 2;
-      const aNext = ((col + 0.5 + offset) / cols) * Math.PI * 2;
+  // Longueur de liaison C-C en unités scène (zigzag : nHex cellules = circonférence)
+  // Une cellule unitaire zigzag a une largeur de sqrt(3)*d
+  const d = circumference / (nHex * Math.sqrt(3));
 
-      const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
-      const x2 = Math.cos(a2) * radius, z2 = Math.sin(a2) * radius;
-      const xN = Math.cos(aNext) * radius, zN = Math.sin(aNext) * radius;
+  // Vecteurs du réseau hexagonal (orientation zigzag, axe du tube = y)
+  const a1x = Math.sqrt(3) * d;       // vecteur a1 (horizontal)
+  const a2x = Math.sqrt(3) * d / 2;   // composante x de a2
+  const a2y = 1.5 * d;                // composante y de a2
 
-      // liaison horizontale
-      positions.push(x1, y, z1, x2, y, z2);
-      // liaison vers rangée suivante
-      positions.push(x1, y, z1, xN, yNext, zN);
+  const iMax = Math.ceil(circumference / a1x) + 2;
+  const jMin = -Math.ceil(height / a2y) - 2;
+  const jMax =  Math.ceil(height / a2y) + 2;
+
+  // Projette un segment 2D (abscisse curviligne → angle) sur le cylindre
+  const addEdge = (x1, y1, x2, y2) => {
+    if (y1 < -height / 2 - d && y2 < -height / 2 - d) return;
+    if (y1 >  height / 2 + d && y2 >  height / 2 + d) return;
+    const t1 = x1 / radius, t2 = x2 / radius;
+    positions.push(Math.cos(t1) * radius, y1, Math.sin(t1) * radius);
+    positions.push(Math.cos(t2) * radius, y2, Math.sin(t2) * radius);
+  };
+
+  // Génère tous les atomes A du sous-réseau et trace leurs 3 liaisons vers les B voisins
+  // delta1 = (0, +d)          : liaison verticale vers le haut
+  // delta2 = (-√3d/2, -d/2)   : liaison oblique bas-gauche
+  // delta3 = (+√3d/2, -d/2)   : liaison oblique bas-droite
+  const s = Math.sqrt(3) * d / 2;
+  for (let i = 0; i < iMax; i++) {
+    for (let j = jMin; j <= jMax; j++) {
+      const ax = i * a1x + j * a2x;
+      const ay = j * a2y;
+      addEdge(ax, ay, ax,     ay + d);
+      addEdge(ax, ay, ax - s, ay - d / 2);
+      addEdge(ax, ay, ax + s, ay - d / 2);
     }
   }
 
