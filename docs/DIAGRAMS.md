@@ -17,56 +17,59 @@
 | [7](#7-cycle-de-vie-dune-cartographie) | Cycle de vie d'une cartographie | `stateDiagram` |
 | [8](#8-pipeline-de-rendu-3d--buildnanotubegroup) | Pipeline de rendu 3D — buildNanotubeGroup | `flowchart` |
 | [9](#9-coordonnées-hexagonales-cube--voisins-et-directions) | Coordonnées hexagonales cube — voisins | `graph` |
-| [10](#10-gantt--workflow-utilisateur-typique) | Gantt — workflow utilisateur typique | `gantt` |
+| [10](#10-lattice-carbone--projection-sur-cylindre) | Lattice carbone — projection sur cylindre | `flowchart` |
+| [11](#11-hexagone-interactif--tube-enfant) | Hexagone interactif — tube enfant | `sequenceDiagram` |
+| [12](#12-calcul-chiralité-du-tube-enfant) | Calcul chiralité du tube enfant | `flowchart` |
+| [13](#13-gantt--workflow-utilisateur-typique) | Gantt — workflow utilisateur typique | `gantt` |
 
 ---
 
 ## 1. Architecture générale
 
-Vue d'ensemble des modules de l'application et de leurs dépendances, incluant les services externes (Anthropic API, Omeka S).
+Vue d'ensemble des modules de l'application et de leurs dépendances, incluant les services externes.
 
 ```mermaid
 graph TB
     subgraph Browser["🌐 Navigateur (SPA Vite)"]
         subgraph UI["Interface utilisateur"]
-            HTML["index.html"]
-            CSS["style.css<br/>(dark theme)"]
+            HTML["index.html\n+ panel hexagone"]
+            CSS["style.css\n(dark theme)"]
         end
 
         subgraph Core["Contrôleur central"]
-            APP["app.js<br/><b>App</b>"]
+            APP["app.js\nApp"]
         end
 
         subgraph HexModule["⬡ Module Hexagonal"]
-            HEX["hex.js<br/>Hex · Layout · Point<br/>coordonnées cube"]
-            HEXMAP["hexMap.js<br/>HexMap SVG D3"]
+            HEX["hex.js\nHex · Layout · Point\ncoordonnées cube"]
+            HEXMAP["hexMap.js\nHexMap SVG D3"]
         end
 
         subgraph NanoModule["⚛ Module Nanotube"]
-            NANO["nanotube.js<br/>Nanotube<br/>modèle physique"]
-            GEO["geometry.js<br/>Three.js geometry<br/>tube + lattice + caps"]
+            NANO["nanotube.js\nNanotube\nmodèle physique"]
+            GEO["geometry.js\nbuildNanotubeGroup\nbuildTubeHexFaces\nlattice graphène exact"]
         end
 
         subgraph SceneModule["🎬 Module 3D"]
-            SCENE["scene3d.js<br/>Scene3D<br/>WebGL · OrbitControls"]
+            SCENE["scene3d.js\nScene3D\nraycaster étendu\naddHorizontalTube"]
         end
 
         subgraph ChartModule["📊 Module Charts"]
-            CHARTS["charts.js<br/>NanoCharts<br/>D3.js SVG"]
+            CHARTS["charts.js\nNanoCharts D3.js"]
         end
 
         subgraph AgentModule["🤖 Module Agent"]
-            AGENT["agents.js<br/>streamAgentResponse<br/>Tool Use"]
+            AGENT["agents.js\nstreamAgentResponse\nTool Use"]
         end
 
         subgraph APIModule["💾 Module API"]
-            OMEKA["omeka.js<br/>OmekaClient<br/>REST CRUD"]
+            OMEKA["omeka.js\nOmekaClient\nCRUD + Resource Templates"]
         end
     end
 
     subgraph External["☁️ Services externes"]
-        ANTHROPIC["Anthropic API<br/>claude-sonnet-4-6"]
-        OMEKAS["Omeka S<br/>REST API"]
+        ANTHROPIC["Anthropic API\nclaude-sonnet-4-6"]
+        OMEKAS["Omeka S\nREST API"]
     end
 
     APP --> HEXMAP
@@ -101,28 +104,28 @@ graph TB
 
 ## 2. Classification des nanotubes par chiralité
 
-Arbre de décision pour déterminer le type et la conductivité d'un nanotube à partir de ses indices `(m, n)`.
+Arbre de décision pour déterminer le type et la conductivité d'un nanotube.
 
 ```mermaid
 flowchart TD
     START(["Nanotube (m, n)"])
 
     START --> CHECK1{"m = n ?"}
-    CHECK1 -->|Oui| ARMCHAIR["⬡ ARMCHAIR<br/>ex: (5,5) (10,10)"]
+    CHECK1 -->|Oui| ARMCHAIR["⬡ ARMCHAIR\nex: (5,5) (10,10)"]
     CHECK1 -->|Non| CHECK2{"n = 0 ?"}
-    CHECK2 -->|Oui| ZIGZAG["⬡ ZIGZAG<br/>ex: (7,0) (9,0)"]
-    CHECK2 -->|Non| CHIRAL["⬡ CHIRAL<br/>ex: (6,2) (8,3)"]
+    CHECK2 -->|Oui| ZIGZAG["⬡ ZIGZAG\nex: (7,0) (9,0)"]
+    CHECK2 -->|Non| CHIRAL["⬡ CHIRAL\nex: (6,2) (8,3)"]
 
-    ARMCHAIR --> METAL1["⚡ Toujours MÉTALLIQUE<br/>Eg = 0 eV"]
+    ARMCHAIR --> METAL1["⚡ Toujours MÉTALLIQUE\nEg = 0 eV"]
     ZIGZAG   --> CHECK3{"m mod 3 = 0 ?"}
     CHIRAL   --> CHECK4{"(m−n) mod 3 = 0 ?"}
 
-    CHECK3 -->|Oui| METAL2["⚡ MÉTALLIQUE<br/>Eg = 0 eV"]
-    CHECK3 -->|Non| SEMI1["🔋 SEMI-CONDUCTEUR<br/>Eg ≈ 0.9/d eV"]
-    CHECK4 -->|Oui| METAL3["⚡ MÉTALLIQUE<br/>Eg = 0 eV"]
-    CHECK4 -->|Non| SEMI2["🔋 SEMI-CONDUCTEUR<br/>Eg ≈ 0.9/d eV"]
+    CHECK3 -->|Oui| METAL2["⚡ MÉTALLIQUE\nEg = 0 eV"]
+    CHECK3 -->|Non| SEMI1["🔋 SEMI-CONDUCTEUR\nEg ≈ 0.9/d eV"]
+    CHECK4 -->|Oui| METAL3["⚡ MÉTALLIQUE\nEg = 0 eV"]
+    CHECK4 -->|Non| SEMI2["🔋 SEMI-CONDUCTEUR\nEg ≈ 0.9/d eV"]
 
-    METAL1 & METAL2 & METAL3 --> DIAM["📐 Diamètre<br/>d = (a₀/π)√(m²+mn+n²)<br/>a₀ = 0.246 nm"]
+    METAL1 & METAL2 & METAL3 --> DIAM["📐 Diamètre\nd = (a₀/π)√(m²+mn+n²)\na₀ = 0.246 nm"]
     SEMI1 & SEMI2 --> DIAM
 
     style ARMCHAIR fill:#0e3a40,stroke:#22d3ee,color:#22d3ee
@@ -141,7 +144,7 @@ flowchart TD
 
 ## 3. Flux de données — interactions utilisateur
 
-Comment les actions utilisateur traversent les couches de l'application, de l'interface jusqu'aux sorties (3D, charts, agent, API).
+Comment les actions utilisateur traversent les couches de l'application.
 
 ```mermaid
 flowchart LR
@@ -150,31 +153,37 @@ flowchart LR
     subgraph Views["Vues"]
         SVG["⬡ Grille SVG\nD3.js"]
         V3D["🎬 Scène 3D\nThree.js"]
+        PANEL["📋 Panel hex\nslide-over"]
     end
 
     subgraph AppCtrl["App.js — Contrôleur"]
-        STATE["Map&lt;hexKey, Nanotube&gt;"]
+        STATE["tubes: Map(hexKey→Nanotube)\nhorizTubes: Map(faceKey→Group)\nhexFaceData: Map(faceKey→Data)"]
         CRUD["CRUD local"]
     end
 
     subgraph Compute["Calculs"]
         MODEL["Nanotube\nmodèle physique"]
-        GEOM["buildNanotubeGroup\ngéométrie WebGL"]
+        GEOM["buildNanotubeGroup\nbuildTubeHexFaces"]
     end
 
     subgraph Output["Sorties"]
         CHARTS["📊 D3 Charts"]
         PROPS["📋 Panneau\npropriétés"]
         AGENT["🤖 Agent IA\nstream"]
-        API["💾 Omeka S\nREST"]
+        API["💾 Omeka S\nREST + Templates"]
     end
 
     USER -->|"double-clic hex"| SVG
-    USER -->|"clic tube"| V3D
+    USER -->|"clic tube/grille"| V3D
+    USER -->|"clic hexagone tube"| V3D
     USER -->|"édite m,n,L"| PROPS
 
     SVG -->|"sélection / add"| AppCtrl
-    V3D -->|"sélection"| AppCtrl
+    V3D -->|"onSelect"| AppCtrl
+    V3D -->|"onTubeHexSelect"| AppCtrl
+    AppCtrl -->|"ouvre"| PANEL
+    PANEL -->|"spawn tube enfant"| AppCtrl
+    PANEL -->|"save hex"| API
     PROPS -->|"Appliquer"| AppCtrl
 
     AppCtrl --> STATE
@@ -186,8 +195,8 @@ flowchart LR
     CRUD --> CHARTS
     MODEL --> PROPS
 
-    AppCtrl -->|"💡 Suggérer\n⚡ Optimiser"| AGENT
-    AppCtrl -->|"💾 Sauver\n📂 Charger"| API
+    AppCtrl -->|"💡/⚡"| AGENT
+    AppCtrl -->|"💾/📂"| API
 
     style AppCtrl fill:#1e2736,stroke:#22d3ee,color:#22d3ee
     style Views   fill:#111827,stroke:#818cf8,color:#818cf8
@@ -199,33 +208,10 @@ flowchart LR
 
 ## 4. Modèle de classes — modules principaux
 
-Diagramme UML des classes principales, leurs attributs, méthodes et relations.
+Diagramme UML des classes principales, attributs, méthodes et relations.
 
 ```mermaid
 classDiagram
-    class Hex {
-        +int q
-        +int r
-        +int s
-        +add(b) Hex
-        +subtract(b) Hex
-        +distance(b) int
-        +neighbor(dir) Hex
-        +neighbors() Hex[]
-        +linedraw(b) Hex[]
-        +key() string
-    }
-
-    class Layout {
-        +Orientation orientation
-        +Point size
-        +Point origin
-        +hexToPixel(h) Point
-        +pixelToHex(p) Hex
-        +polygonCorners(h) Point[]
-        +polygonPath(h) string
-    }
-
     class Nanotube {
         +int m
         +int n
@@ -233,88 +219,71 @@ classDiagram
         +float rotation
         +string color
         +string hexKey
-        +string omekaId
         +diameter() float
         +type() string
         +conductivity() string
         +bandGap() float
-        +isMetallic() bool
         +toJSON() object
         +toOmeka(setId) object
-    }
-
-    class HexMap {
-        +Map tubes
-        +Layout layout
-        +build(radius, orient)
-        +setTube(key, tube)
-        +removeTube(key)
-        +onSelect(cb)
-        +getStats() object
     }
 
     class Scene3D {
         +Map tubeObjects
         +Map hexObjects
-        +THREE.Scene scene
+        +Map hexFaceObjects
         +buildGrid(hexes, orient)
         +setTube(key, tube)
         +removeTube(key)
-        +highlightTube(key)
+        +addHorizontalTube(tube, center, normal, faceKey)
+        +onSelect(cb)
+        +onTubeHexSelect(cb)
         +screenshot() string
-        +resetCamera()
-    }
-
-    class NanoCharts {
-        +updateDistribution(tubes)
-        +updateProperties(tubes)
-        +update(tubesMap)
     }
 
     class OmekaClient {
         +string baseUrl
-        +string keyId
-        +string keyCred
-        +int itemSetId
         +ping() bool
         +listMaps() array
-        +getMap(id) object
         +saveMap(data) object
-        +deleteMap(id)
+        +listResourceTemplates() array
+        +getResourceTemplate(id) object
+        +saveHexItem(hexData) object
     }
 
     class App {
         +Map tubes
-        +string selectedKey
-        +int gridRadius
-        +HexMap hexMap
-        +Scene3D scene3d
-        +NanoCharts charts
-        +OmekaClient omeka
+        +Map horizTubes
+        +Map horizTubesData
+        +Map hexFaceData
+        +object _activeHexFace
         +init()
-        +_setTube(key, tube)
-        +_removeTube(key)
-        +_sendAgentMessage(msg)
-        +_saveMap()
-        +_loadMap(id)
+        +_onTubeHexSelect(info)
+        +_computeChildTubeChirality(hexKey)
+        +_spawnHorizontalTube()
+        +_saveHexToOmeka()
+        +_loadTemplates()
+    }
+
+    class HexMap {
+        +Map tubes
+        +build(radius, orient)
+        +setTube(key, tube)
+        +onSelect(cb)
+        +getStats() object
     }
 
     App "1" --> "1" HexMap
     App "1" --> "1" Scene3D
-    App "1" --> "1" NanoCharts
     App "1" --> "1" OmekaClient
     App "1" --> "*" Nanotube
-    HexMap --> Layout
-    HexMap --> Hex
-    Scene3D --> Nanotube
-    Layout --> Hex
+    Scene3D --> Nanotube : userData.nanotube
 ```
 
 ---
 
 ## 5. Boucle agentic — Tool Use Anthropic
 
-Séquence détaillée de la boucle multi-tours : streaming, détection des tool calls, exécution locale et réponse finale.
+Séquence multi-tours : streaming, détection des tool calls, exécution locale.
 
 ```mermaid
 sequenceDiagram
@@ -332,26 +301,24 @@ sequenceDiagram
 
         alt stop_reason = "end_turn"
             API-->>Agent: text_delta chunks
-            Agent-->>UI: onDelta(chunk) — affichage temps réel
-            Agent-->>UI: FIN
+            Agent-->>UI: onDelta(chunk)
         else stop_reason = "tool_use"
-            API-->>Agent: tool_use block (name + input JSON)
+            API-->>Agent: tool_use block
             Agent->>Tools: executeTool(name, input)
-            Tools-->>Agent: result object
-            Agent-->>UI: onTool(name, input, result) — log UI
+            Tools-->>Agent: result
+            Agent-->>UI: onTool(name, input, result)
             Agent->>API: messages += tool_result
-            Note over Agent,API: Nouveau tour avec résultat du tool
         end
     end
 
-    UI-->>User: Réponse finale affichée en streaming
+    UI-->>User: Réponse finale
 ```
 
 ---
 
 ## 6. CRUD Omeka S — séquence complète
 
-Toutes les opérations REST entre l'application et l'API Omeka S : connexion, liste, création, mise à jour, chargement et suppression.
+Toutes les opérations REST : cartographies, hexagones et resource templates.
 
 ```mermaid
 sequenceDiagram
@@ -359,80 +326,67 @@ sequenceDiagram
     participant Client as 💾 OmekaClient
     participant REST as 🌐 Omeka S API
 
-    Note over App,REST: ── Connexion ──
-    App->>Client: ping()
-    Client->>REST: GET /api
-    REST-->>Client: 200 OK {version}
-    Client-->>App: true ✓
-
-    Note over App,REST: ── Lister les cartes ──
-    App->>Client: listMaps()
-    Client->>REST: GET /api/items?item_set_id=1&per_page=50
-    REST-->>Client: [{o:id, dcterms:title, ...}]
-    Client-->>App: [{id, title, modified}]
-
-    Note over App,REST: ── Créer une carte ──
+    Note over App,REST: ── Cartographies ──
     App->>Client: saveMap({title, tubes, gridRadius})
-    Client->>REST: POST /api/items\n{@type, o:item_set, dcterms:title,\n dcterms:description: JSON(tubes)}
-    REST-->>Client: 201 Created {o:id: 42}
-    Client-->>App: item (omekaId = 42)
+    Client->>REST: POST /api/items
+    REST-->>Client: 201 {o:id: 42}
+    Client-->>App: item
 
-    Note over App,REST: ── Mettre à jour ──
-    App->>Client: saveMap({omekaId:42, ...})
-    Client->>REST: PATCH /api/items/42
-    REST-->>Client: 200 OK
-    Client-->>App: item mis à jour
+    Note over App,REST: ── Resource Templates ──
+    App->>Client: listResourceTemplates()
+    Client->>REST: GET /api/resource_templates
+    REST-->>Client: [{o:id, o:label}, ...]
+    Client-->>App: [{id, label}]
 
-    Note over App,REST: ── Charger ──
-    App->>Client: getMap(42)
-    Client->>REST: GET /api/items/42
-    REST-->>Client: item complet
-    Client-->>App: {omekaId, title, tubes[], gridRadius}
+    App->>Client: getResourceTemplate(5)
+    Client->>REST: GET /api/resource_templates/5
+    REST-->>Client: {o:resource_template_property: [...]}
+    Client-->>App: {id, label, properties: [{term, label, type}]}
 
-    Note over App,REST: ── Supprimer ──
-    App->>Client: deleteMap(42)
-    Client->>REST: DELETE /api/items/42
-    REST-->>Client: 204 No Content
+    Note over App,REST: ── Hexagone (Item) ──
+    App->>Client: saveHexItem({hexKey, templateId, properties})
+    Client->>REST: POST /api/items\n{dcterms:title, dcterms:description,\ndcterms:subject: nanotube:hex,\n<terme_template>: valeur}
+    REST-->>Client: 201 {o:id: 99}
+    Client-->>App: item sauvegardé
 ```
 
 ---
 
 ## 7. Cycle de vie d'une cartographie
 
-Machine à états de la cartographie depuis sa création jusqu'à la sauvegarde, avec toutes les transitions possibles.
+Machine à états depuis la création jusqu'à la sauvegarde.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Vide : + Carte (nouveau)
 
-    Vide --> EnCours : Double-clic sur cellule\n→ ajout nanotube aléatoire
+    Vide --> EnCours : Double-clic cellule\n→ nanotube aléatoire
 
-    EnCours --> EnCours : Édition (m,n,longueur…)\n→ Appliquer
+    EnCours --> EnCours : Édition (m,n,longueur…)\nAppliquer
 
-    EnCours --> EnCours : Ajout / Suppression\nde nanotubes
+    EnCours --> EnCours : Clic hexagone tube\n→ propriétés / tube enfant
 
     EnCours --> Sauvegardée : 💾 Sauver\nPOST Omeka S
 
-    Sauvegardée --> EnCours : Modification\naprès sauvegarde
+    Sauvegardée --> EnCours : Modification
 
-    Sauvegardée --> Sauvegardée : 💾 Sauver (update)\nPATCH Omeka S
+    Sauvegardée --> Sauvegardée : 💾 Sauver update\nPATCH Omeka S
 
     Vide --> Chargée : 📂 Charger\nGET Omeka S
 
-    Chargée --> EnCours : Modification\nd'une carte chargée
+    Chargée --> EnCours : Modification
 
     EnCours --> Exportée : 📷 Exporter PNG
 
-    Exportée --> EnCours : Continue l'édition
+    Exportée --> EnCours : Continue
 
-    EnCours --> Vide : + Carte\n(réinitialise tout)
-
-    Sauvegardée --> Vide : + Carte\n(réinitialise tout)
+    EnCours --> Vide : + Carte
 
     note right of EnCours
         State interne :
         tubes: Map(hexKey → Nanotube)
-        Synchronisé avec HexMap + Scene3D + Charts
+        horizTubes: Map(faceKey → Group)
+        hexFaceData: Map(faceKey → OmekaData)
     end note
 ```
 
@@ -440,26 +394,28 @@ stateDiagram-v2
 
 ## 8. Pipeline de rendu 3D — buildNanotubeGroup
 
-Décomposition du processus de construction de la géométrie Three.js pour un nanotube, du modèle physique au `THREE.Group` rendu.
+Construction de la géométrie Three.js pour un nanotube.
 
 ```mermaid
 flowchart TD
     INPUT["Nanotube(m, n, length, color)"]
 
-    INPUT --> SCALE["📐 Calcul de l'échelle\ndiameter × NM_SCALE × 8\nheight = length × NM_SCALE"]
+    INPUT --> SCALE["📐 Calcul de l'échelle\ndiameter × NM_SCALE × 8\nheight = length × NM_SCALE\nnHex = max(6, m+n)"]
 
     SCALE --> SEGS["⬡ Segments de cylindre\nmax(12, (m+n)×2)"]
 
-    subgraph GROUP["THREE.Group"]
-        TUBE["CylinderGeometry\nMeshPhysicalMaterial\n・metalness = 0.9 si métallique\n・opacity = 0.55\n・DoubleSide"]
+    subgraph GROUP["THREE.Group\nuserData.nanotube = référence modèle"]
+        TUBE["CylinderGeometry\nMeshPhysicalMaterial\n・metalness = 0.9 si métallique\n・opacity = 0.55, DoubleSide"]
 
-        LATTICE["LineSegments\n(réseau carbone)\nboucle rows × cols\n→ liaisons hex enroulées"]
+        LATTICE["LineSegments\nLattice honeycomb graphène EXACT\nZigzag : a1=(√3d,0), a2=(√3d/2,3d/2)\nProjection x→θ=x/r sur cylindre\n3 liaisons par atome A"]
 
-        CAPTOP["SphereGeometry ½\n(capuchon haut)\ny = +height/2"]
+        CAPTOP["SphereGeometry ½\ncapuchon haut\ny = +height/2"]
 
-        CAPBOT["SphereGeometry ½\n(capuchon bas)\ny = -height/2\nrotationX = π"]
+        CAPBOT["SphereGeometry ½\ncapuchon bas\ny = -height/2, rotX = π"]
 
-        GLOW["CylinderGeometry\n(halo)\nradius × 1.3\nopacity = 0.06\nBackSide"]
+        GLOW["CylinderGeometry halo\nradius × 1.3\nopacity = 0.06, BackSide"]
+
+        FACES["buildTubeHexFaces()\nMesh[] invisibles (opacity=0)\nraycastables\nuserData.isHexFace, hexFaceIdx,\nhexFacePos, tubeHexKey"]
     end
 
     SEGS --> TUBE
@@ -467,25 +423,27 @@ flowchart TD
     SEGS --> CAPTOP
     SEGS --> CAPBOT
     SEGS --> GLOW
+    SEGS --> FACES
 
     GROUP --> ROT["rotation.y = rotation × π/180"]
     ROT --> SCENE["→ Scene3D\nposition = (hexCenter.x, h/2, hexCenter.z)"]
 
-    style GROUP fill:#1e2736,stroke:#22d3ee,color:#e2e8f0
-    style TUBE   fill:#0e3a40,stroke:#22d3ee,color:#22d3ee
+    style GROUP   fill:#1e2736,stroke:#22d3ee,color:#e2e8f0
+    style TUBE    fill:#0e3a40,stroke:#22d3ee,color:#22d3ee
     style LATTICE fill:#0a2a1a,stroke:#4ade80,color:#4ade80
-    style CAPTOP fill:#1a1a2e,stroke:#818cf8,color:#818cf8
-    style CAPBOT fill:#1a1a2e,stroke:#818cf8,color:#818cf8
-    style GLOW   fill:#2a1a0a,stroke:#facc15,color:#facc15
-    style INPUT  fill:#22d3ee,stroke:#22d3ee,color:#000
-    style SCENE  fill:#111827,stroke:#7a8fa8,color:#e2e8f0
+    style CAPTOP  fill:#1a1a2e,stroke:#818cf8,color:#818cf8
+    style CAPBOT  fill:#1a1a2e,stroke:#818cf8,color:#818cf8
+    style GLOW    fill:#2a1a0a,stroke:#facc15,color:#facc15
+    style FACES   fill:#2a0a2a,stroke:#f87171,color:#f87171
+    style INPUT   fill:#22d3ee,stroke:#22d3ee,color:#000
+    style SCENE   fill:#111827,stroke:#7a8fa8,color:#e2e8f0
 ```
 
 ---
 
 ## 9. Coordonnées hexagonales cube — voisins et directions
 
-Les 6 directions standard en coordonnées cube, la règle d'invariance `q+r+s=0`, le calcul de distance et les matrices de conversion vers les pixels.
+Les 6 directions standard en coordonnées cube et les matrices de conversion.
 
 ```mermaid
 graph TB
@@ -505,8 +463,8 @@ graph TB
     C -->|"-q +r"| D4
     C -->|"+r -s"| D5
 
-    RULE["Règle invariante\nq + r + s = 0\npour toute cellule"]
-    DIST["Distance entre A et B\n= (|dq|+|dr|+|ds|) / 2"]
+    RULE["Règle invariante\nq + r + s = 0"]
+    DIST["Distance A→B\n= (|dq|+|dr|+|ds|) / 2"]
 
     CONV1["Pointy-top → pixels\nx = size × (√3·q + √3/2·r)\ny = size × (3/2·r)"]
     CONV2["Flat-top → pixels\nx = size × (3/2·q)\ny = size × (√3/2·q + √3·r)"]
@@ -526,38 +484,158 @@ graph TB
 
 ---
 
-## 10. Gantt — workflow utilisateur typique
+## 10. Lattice carbone — projection sur cylindre
 
-Chronologie des étapes d'une session de travail standard sur NanoTubeStory.
+Comment le réseau honeycomb graphène 2D est enroulé sur la surface cylindrique du tube.
 
 ```mermaid
-gantt
-    title Workflow utilisateur — NanoTubeStory
-    dateFormat  X
-    axisFormat %s
+flowchart LR
+    subgraph Param["Paramètres"]
+        P1["nHex = max(6, m+n)\nnombre d'hex autour"]
+        P2["circumference = 2π·r"]
+        P3["d = circumference / (nHex·√3)\nlongueur liaison C-C scène"]
+    end
 
-    section Configuration
-    Ouvrir l'application       :done,    c1, 0, 2
-    Configurer Omeka S / API   :done,    c2, 1, 3
-    Choisir rayon de grille    :done,    c3, 3, 4
+    subgraph Lattice2D["Lattice 2D — orientation zigzag"]
+        LA["Atomes A\n(i·a1x + j·a2x, j·a2y)"]
+        LB["Atomes B = A + (0, d)"]
+        BONDS["3 liaisons depuis A :\n① A → B  (haut)\n② A → B-gauche (-√3d/2, -d/2)\n③ A → B-droite (+√3d/2, -d/2)"]
+    end
 
-    section Création
-    Placer nanotubes (dbl-clic):active,  n1, 4, 8
-    Éditer chiralité (m,n)     :         n2, 6, 10
-    Ajuster longueur / couleur :         n3, 8, 11
-    Visualiser en 3D           :         n4, 4, 11
+    subgraph Proj["Projection cylindrique"]
+        THETA["θ = x / radius"]
+        XYZ["(cos θ·r, y, sin θ·r)"]
+    end
 
-    section Analyse
-    Lire graphiques D3         :         a1, 10, 12
-    Demander analyse à l'agent :         a2, 11, 14
-    Appliquer suggestions IA   :         a3, 13, 16
+    subgraph GL["Rendu Three.js"]
+        LS["LineSegments\nFloat32BufferAttribute"]
+    end
 
-    section Sauvegarde
-    Saisir un titre            :         s1, 15, 16
-    Sauvegarder (Omeka S)      :         s2, 16, 17
-    Exporter PNG               :         s3, 16, 18
+    Param --> Lattice2D
+    LA --> BONDS
+    LB --> BONDS
+    BONDS --> Proj
+    Proj --> THETA --> XYZ --> GL
+
+    style Param    fill:#1e2736,stroke:#22d3ee,color:#22d3ee
+    style Lattice2D fill:#0a2a1a,stroke:#4ade80,color:#4ade80
+    style Proj     fill:#1a1a3e,stroke:#818cf8,color:#818cf8
+    style GL       fill:#0e3a40,stroke:#22d3ee,color:#22d3ee
 ```
 
 ---
 
-*NanoTubeStory v1.0 — Licence MIT*
+## 11. Hexagone interactif — tube enfant
+
+Séquence complète depuis le clic sur un hexagone du tube jusqu'au tube enfant créé.
+
+```mermaid
+sequenceDiagram
+    actor User as 👤 Utilisateur
+    participant Canvas as 🎬 canvas-3d
+    participant Raycaster as 🎯 Raycaster
+    participant Scene as scene3d.js
+    participant App as app.js
+    participant Panel as 📋 Panel hex
+    participant Omeka as 💾 Omeka S
+
+    User->>Canvas: Clic sur hexagone du tube
+
+    Canvas->>Raycaster: setFromCamera(mouse)
+    Raycaster->>Scene: intersectObjects(hexFaceObjects)
+    Scene->>Scene: Calcule hexCenterWorld\net hexNormalWorld\nvia matrixWorld du tubeGroup
+
+    Scene->>App: onTubeHexSelect({hexKey, hexFaceIdx,\nhexFacePos, hexCenterWorld, hexNormalWorld})
+
+    App->>App: _computeChildTubeChirality(hexKey)\n→ d_enfant = π·d_parent/nHex\n→ n = round(π·d / a₀·√3)\n→ armchair (n,n)
+
+    App->>Panel: Ouvre panel\nm=n=2, ⌀ inscrit≈0.246nm
+
+    alt Template Omeka S
+        User->>Panel: Choisit template, remplit champs
+        Panel->>App: _saveHexToOmeka()
+        App->>Omeka: listResourceTemplates()\ngetResourceTemplate(id)\nsaveHexItem(hexData)
+        Omeka-->>App: Item créé (omekaId)
+        App->>Panel: ✓ Sauvegardé #99
+    else Tube enfant
+        User->>Panel: Clique [⬡ Créer nanotube]
+        Panel->>App: _spawnHorizontalTube()
+        App->>App: Nanotube({m,n,length,color})
+        App->>Scene: addHorizontalTube(tube,\nhexCenterWorld, hexNormalWorld, faceKey)
+        Scene->>Scene: quaternion = setFromUnitVectors(Y, normal)\nposition = center + normal × halfLen\nbuildTubeHexFaces() → faces cliquables
+        Scene-->>App: group (dans horizTubes)
+        App->>App: horizTubesData.set(faceKey, tube)
+        Note over App,Scene: Le tube enfant a ses propres hexagones\ncliquables → même séquence récursive
+    end
+```
+
+---
+
+## 12. Calcul chiralité du tube enfant
+
+Dérivation des indices `(m, n)` du tube enfant depuis la géométrie de l'hexagone parent.
+
+```mermaid
+flowchart TD
+    START(["Hexagone cliqué\nsur tube parent (m_p, n_p)"])
+
+    START --> NHEX["nHex = max(6, m_p + n_p)"]
+    NHEX  --> RADIUS["r = d_parent × NM_SCALE × 8 / 2\n(rayon visuel du tube parent)"]
+    RADIUS --> DSCENE["d_liaison = 2π·r / (nHex · √3)\n(longueur C-C en unités scène)"]
+    DSCENE --> INSCRIT["⌀ inscrit = √3 · d_liaison\n(diamètre du cercle inscrit\ndans l'hexagone)"]
+    INSCRIT --> DNM["d_enfant (nm) = ⌀_inscrit / (NM_SCALE × 8)\n\nSimplification :\nd_enfant = π · d_parent / nHex"]
+    DNM --> NARM["n_armchair = round(π · d_enfant / (a₀ · √3))\na₀ = 0.246 nm"]
+    NARM --> CHILD(["Tube enfant : armchair (n,n)\navec rayon = cercle inscrit\nde l'hexagone parent"])
+
+    EXAMPLE["Exemple :\nParent (9,0) → d=0.705 nm\nnHex=9\nd_enfant ≈ 0.246 nm\nn = round(π×0.246 / 0.246×√3) = 2\n→ Enfant armchair (2,2)"]
+
+    CHILD -.->|"vérifié avec"| EXAMPLE
+
+    style START  fill:#22d3ee,stroke:#22d3ee,color:#000
+    style CHILD  fill:#0a2a1a,stroke:#4ade80,color:#4ade80
+    style EXAMPLE fill:#1e2736,stroke:#facc15,color:#facc15
+```
+
+---
+
+## 13. Gantt — workflow utilisateur typique
+
+Chronologie d'une session standard sur NanoTubeStory.
+
+```mermaid
+gantt
+    title Workflow utilisateur — NanoTubeStory v1.1
+    dateFormat  X
+    axisFormat %s
+
+    section Configuration
+    Ouvrir l'application        :done,    c1, 0, 2
+    Configurer Omeka S / API    :done,    c2, 1, 3
+    Choisir rayon de grille     :done,    c3, 3, 4
+
+    section Création de tubes
+    Placer nanotubes (dbl-clic) :active,  n1, 4, 8
+    Éditer chiralité (m,n)      :         n2, 6, 10
+    Visualiser réseau honeycomb :         n3, 4, 10
+
+    section Hexagones interactifs
+    Cliquer hexagone du tube    :         h1, 10, 11
+    Choisir template Omeka S    :         h2, 11, 13
+    Remplir propriétés / sauver :         h3, 12, 14
+    Créer tube enfant           :         h4, 13, 15
+    Explorer récursivement      :         h5, 14, 17
+
+    section Analyse
+    Lire graphiques D3          :         a1, 15, 17
+    Demander analyse à l'agent  :         a2, 16, 19
+    Appliquer suggestions IA    :         a3, 18, 20
+
+    section Sauvegarde
+    Saisir un titre             :         s1, 19, 20
+    Sauvegarder (Omeka S)       :         s2, 20, 21
+    Exporter PNG                :         s3, 20, 22
+```
+
+---
+
+*NanoTubeStory v1.1 — Licence MIT*

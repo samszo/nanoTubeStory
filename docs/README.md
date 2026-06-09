@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Date** | 2026-06-08 |
 | **Stack** | Three.js · D3.js · Anthropic SDK · Omeka S |
 | **Licence** | MIT |
-| **Diagrammes** | [📐 DIAGRAMS.md](./DIAGRAMS.md) — 10 diagrammes Mermaid |
+| **Diagrammes** | [📐 DIAGRAMS.md](./DIAGRAMS.md) |
 
 ---
 
@@ -20,10 +20,11 @@
 4. [Architecture technique](#4-architecture-technique)
 5. [Installation et configuration](#5-installation-et-configuration)
 6. [Guide utilisateur](#6-guide-utilisateur)
-7. [API Omeka S](#7-api-omeka-s)
-8. [Agent IA (Anthropic SDK)](#8-agent-ia-anthropic-sdk)
-9. [Référence des modules](#9-référence-des-modules)
-10. [Glossaire](#10-glossaire)
+7. [Hexagones interactifs sur le tube](#7-hexagones-interactifs-sur-le-tube)
+8. [API Omeka S](#8-api-omeka-s)
+9. [Agent IA (Anthropic SDK)](#9-agent-ia-anthropic-sdk)
+10. [Référence des modules](#10-référence-des-modules)
+11. [Glossaire](#11-glossaire)
 
 ---
 
@@ -33,11 +34,13 @@
 
 ### 1.1 Objectifs
 
-- **Visualisation 3D** — Rendu interactif de nanotubes avec réseau hexagonal carbone, capuchons et effets lumineux
+- **Visualisation 3D** — Rendu interactif de nanotubes avec réseau hexagonal graphène exact (liaisons C-C projetées sur cylindre), capuchons et effets lumineux
 - **Cartographie spatiale** — Placement et organisation de nanotubes sur grilles hexagonales paramétrables
+- **Hexagones interactifs** — Chaque hexagone du tube est cliquable pour définir ses propriétés (via template Omeka S) et générer des nanotubes enfants
+- **Nanotubes enfants** — Spawn récursif de nanotubes perpendiculaires à la face hexagonale cliquée, avec diamètre = cercle inscrit de l'hexagone
 - **Analyse physique** — Calcul automatique du diamètre, conductivité et band gap selon la chiralité `(m,n)`
 - **Assistance IA** — Agent basé sur Claude (Anthropic) pour analyser et optimiser les configurations
-- **Persistance** — Sauvegarde et chargement des cartographies via l'API REST Omeka S
+- **Persistance** — Sauvegarde des cartographies et des propriétés d'hexagones via l'API REST Omeka S
 
 ### 1.2 Stack technologique
 
@@ -47,14 +50,12 @@
 | Grille hex | D3.js v7 + Red Blob Games | SVG, coordonnées cube, interactions |
 | Graphiques | D3.js v7 | Distribution types, comparaison diamètres |
 | Agent IA | Anthropic SDK + Tool Use | Analyse, suggestion, génération CNT |
-| Persistance | Omeka S REST API | CRUD cartographies, Items Dublin Core |
+| Persistance | Omeka S REST API | CRUD cartographies, Items, Resource Templates |
 | Build | Vite v6 | ESM, HMR, bundling production |
 
 ---
 
 ## 2. Physique des nanotubes de carbone
-
-> 📐 Voir aussi : [DIAGRAMS.md — Classification par chiralité](./DIAGRAMS.md#2-classification-des-nanotubes-par-chiralité)
 
 Un **nanotube de carbone à paroi simple (SWNT)** est formé en enroulant une feuille de graphène — réseau hexagonal bidimensionnel d'atomes de carbone — en cylindre. Ses propriétés physiques et électroniques sont entièrement déterminées par le **vecteur chiral** :
 
@@ -78,17 +79,10 @@ $$d = \frac{a_0}{\pi} \sqrt{m^2 + mn + n^2}$$
 
 avec `a₀ = 0.246 nm` (constante de réseau du graphène) et une longueur de liaison C-C de `0.142 nm`.
 
-```js
-// src/nanotube/nanotube.js
-get diameter() {
-  return (A0 / Math.PI) * Math.sqrt(this.m ** 2 + this.m * this.n + this.n ** 2);
-}
-```
-
 #### Conductivité électrique
 
 ```
-Métallique     si  (m - n) mod 3 = 0  (dont tous les armchair)
+Métallique       si  (m - n) mod 3 = 0  (dont tous les armchair)
 Semi-conducteur  sinon
 ```
 
@@ -96,147 +90,87 @@ Semi-conducteur  sinon
 
 $$E_g \approx \frac{0.9}{d}$$
 
-> Cette relation (approximation *tight-binding*) montre qu'un nanotube plus petit a un band gap plus large — les CNT ultra-minces (d < 0.5 nm) ont des propriétés proches des molécules organiques.
+### 2.3 Réseau hexagonal carbone (lattice graphène)
 
-### 2.3 Exemples numériques
+Le réseau carbone affiché sur le tube est le **vrai lattice honeycomb du graphène** projeté sur la surface cylindrique, pas une approximation. L'implémentation utilise :
 
-| Nanotube | Type | Diamètre | Conductivité | Band gap |
-|----------|------|:---:|---|:---:|
-| (5,5) | Armchair | 0.678 nm | Métallique | 0 eV |
-| (10,10) | Armchair | 1.356 nm | Métallique | 0 eV |
-| (7,0) | Zigzag | 0.548 nm | Semi-conducteur | 1.64 eV |
-| (6,2) | Chiral | 0.564 nm | Semi-conducteur | 1.60 eV |
-| (9,0) | Zigzag | 0.705 nm | Semi-conducteur | 1.28 eV |
+- **Orientation zigzag** — liaisons verticales + deux obliques à ±120°
+- **Vecteurs de réseau** : `a₁ = (√3·d, 0)`, `a₂ = (√3·d/2, 3d/2)` où `d` est la longueur de liaison C-C en unités scène
+- **Projection** : l'abscisse curviligne `x` → angle `θ = x/radius` → coordonnées cylindriques
+- **Nombre d'hexagones** autour de la circonférence = `max(6, n + m)`
 
-### 2.4 Structure des nanotubes multi-parois (MWNT)
-
-Les **MWNT** contiennent plusieurs couches cylindriques concentriques avec un espacement inter-couche de **0.34 nm** (identique à l'espacement inter-feuillet du graphite). NanoTubeStory visualise principalement les SWNT, mais le modèle de données est extensible aux MWNT.
+```
+d_liaison = 2π·radius / (nHex · √3)   [longueur C-C en unités scène]
+```
 
 ---
 
 ## 3. Cartographie hexagonale
 
-> 📐 Voir aussi : [DIAGRAMS.md — Coordonnées cube & voisins](./DIAGRAMS.md#9-coordonnées-hexagonales-cube--voisins-et-directions)
+L'application utilise l'implémentation de référence de **Red Blob Games** basée sur les **coordonnées cube** `(q, r, s)` avec `q + r + s = 0`.
 
-L'application utilise l'implémentation de référence de **Red Blob Games** ([redblobgames.com/grids/hexagons](https://www.redblobgames.com/grids/hexagons/implementation.html)) basée sur les **coordonnées cube**, le système le plus puissant pour les algorithmes sur grilles hexagonales.
-
-### 3.1 Systèmes de coordonnées
-
-| Système | Coordonnées | Contrainte | Usage dans NTS |
-|---------|-------------|---|---|
-| **Cube** | `(q, r, s)` | `q + r + s = 0` | Stockage interne, algorithmes |
-| **Axial** | `(q, r)` | `s = -q-r` implicite | Affichage compact |
-| **Offset** | `(col, row)` | Décalage pair/impair | Import/export utilisateur |
-
-### 3.2 Visualisation de la grille
-
-```
-        ___         ___
-       /   \       /   \
-  ___ /(5,5)\ ___ /(6,2)\ ___
- /   \\(arm) /   \\(chr) /   \
-/(7,0)\ ___ /     \ ___ /(9,0)\
-\(zig) /   \ vide  /   \(zig) /
- \ ___/     \ ___ /     \ ___/
-       \ ___ /     \ ___ /
-```
-
-- 🟦 **Armchair** `(m=n)` — conductivité métallique
-- 🟪 **Chiral** — semi-conducteur variable
-- 🟡 **Zigzag** `(n=0)` — semi-conducteur majoritaire
-
-**Interactions :**
-- **Double-clic** sur une cellule → ajoute un nanotube aléatoire
-- **Clic simple** → sélectionne la cellule pour édition
-
-### 3.3 Algorithmes implémentés
+### 3.1 Algorithmes implémentés
 
 | Fonction | Description |
 |----------|-------------|
 | `hexSpiral(center, radius)` | Génère `3r²+3r+1` cellules en spirale concentrique |
 | `hexRing(center, radius)` | Cellules d'un anneau à distance exacte `r` |
-| `Layout.hexToPixel(hex)` | Coordonnées cube → pixels SVG (pointy-top / flat-top) |
+| `Layout.hexToPixel(hex)` | Coordonnées cube → pixels SVG |
 | `Layout.pixelToHex(point)` | Pixels → hexagone avec arrondi `FractionalHex` |
 | `Hex.distance(other)` | `(|dq| + |dr| + |ds|) / 2` |
-| `Hex.linedraw(other)` | Tracé par interpolation linéaire + arrondi |
 | `Hex.neighbors()` | Les 6 voisins directs |
 
-### 3.4 Orientations supportées
+### 3.2 Orientations supportées
 
-```
-   Pointy-top            Flat-top
-      /\                  ___
-     /  \                /   \
-    |    |              |     |
-     \  /                \___/
-      \/
-```
-
-Les deux orientations sont paramétrables via le sélecteur **Orientation** dans le panneau gauche.
+Les deux orientations **Pointy-top** et **Flat-top** sont paramétrables via le sélecteur dans le panneau gauche.
 
 ---
 
 ## 4. Architecture technique
 
-> 📐 Voir aussi : [DIAGRAMS.md — Architecture générale](./DIAGRAMS.md#1-architecture-générale) et [Modèle de classes](./DIAGRAMS.md#4-modèle-de-classes--modules-principaux)
-
 ### 4.1 Structure des fichiers
 
 ```
 nanoTubeStory/
-├── index.html                  # SPA entry point
-├── vite.config.js              # Config Vite
+├── index.html                  # SPA entry point + panel hexagone
+├── vite.config.js
 ├── package.json
-├── .env.example                # Variables d'environnement
+├── .env.example
 └── src/
-    ├── main.js                 # Point d'entrée — instancie App
-    ├── app.js                  # Contrôleur principal (orchestration)
+    ├── main.js                 # Point d'entrée
+    ├── app.js                  # Contrôleur principal
     ├── style.css               # Design system dark mode
     ├── hex/
-    │   ├── hex.js              # Hex, Layout, coordonnées cube (Red Blob Games)
-    │   └── hexMap.js           # Rendu SVG D3.js + interactions
+    │   ├── hex.js              # Coordonnées cube (Red Blob Games)
+    │   └── hexMap.js           # Rendu SVG D3.js
     ├── nanotube/
-    │   ├── nanotube.js         # Modèle physique CNT (chiralité, propriétés)
-    │   └── geometry.js         # Géométrie Three.js (tube + réseau carbone)
+    │   ├── nanotube.js         # Modèle physique CNT
+    │   └── geometry.js         # Géométrie Three.js + faces cliquables
     ├── scene/
-    │   └── scene3d.js          # Scène Three.js + OrbitControls + raycaster
+    │   └── scene3d.js          # Scène Three.js + raycaster étendu
     ├── charts/
-    │   └── charts.js           # Graphiques D3.js (distribution, diamètres)
+    │   └── charts.js           # Graphiques D3.js
     ├── agents/
-    │   └── agents.js           # Agent Anthropic SDK + Tool Use (browser)
+    │   └── agents.js           # Agent Anthropic SDK
     └── api/
-        └── omeka.js            # Client REST Omeka S (CRUD cartographies)
+        └── omeka.js            # Client REST Omeka S + Resource Templates
 ```
 
-### 4.2 Flux de données
+### 4.2 State de l'application (`App`)
 
-```
-Utilisateur
-    │
-    ▼
-HexMap (SVG D3)  ──────────────────────────────────────────┐
-    │ sélection/ajout                                       │
-    ▼                                                       │
-App.js (contrôleur)                                        │
-    ├─── Nanotube (modèle physique)                        │
-    │         └── calcule diamètre, type, Eg               │
-    ├─── Scene3D (Three.js)                                │
-    │         └── buildNanotubeGroup() → WebGL             │
-    ├─── NanoCharts (D3.js)                                │
-    │         └── distribution + diamètres                 │
-    ├─── OmekaClient (REST)                                │
-    │         └── POST/PATCH/GET items                     │
-    └─── streamAgentResponse (Anthropic)                   │
-              └── stream + tool use ────────────────────────┘
-```
+| Propriété | Type | Description |
+|-----------|------|-------------|
+| `tubes` | `Map<hexKey, Nanotube>` | Tubes sur la grille hexagonale |
+| `horizTubes` | `Map<faceKey, THREE.Group>` | Groupes Three.js des tubes enfants |
+| `horizTubesData` | `Map<faceKey, Nanotube>` | Modèle physique des tubes enfants |
+| `hexFaceData` | `Map<faceKey, object>` | Propriétés Omeka S des hexagones |
+| `_activeHexFace` | `object` | Hexagone courant : `{hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld}` |
+
+La clé `faceKey` a la forme `"hexKey:hexFaceIdx"` (ex. `"0,0,0:42"`), permettant l'imbrication récursive de tubes.
 
 ### 4.3 Pattern architectural
 
-L'application suit un pattern **contrôleur central** (`app.js`) qui :
-- Instancie tous les modules au démarrage
-- Reçoit les événements des vues (HexMap, Scene3D)
-- Coordonne les mises à jour croisées
-- Gère le state partagé (`tubes: Map<hexKey, Nanotube>`)
+L'application suit un pattern **contrôleur central** (`app.js`) qui instancie tous les modules, reçoit les événements des vues et coordonne les mises à jour croisées.
 
 ---
 
@@ -245,69 +179,28 @@ L'application suit un pattern **contrôleur central** (`app.js`) qui :
 ### 5.1 Prérequis
 
 - **Node.js** ≥ 18.0.0 + npm ≥ 9
-- Navigateur moderne avec support **WebGL 2** (Chrome 90+, Firefox 90+, Safari 15+, Edge 90+)
-- *(Optionnel)* Instance **Omeka S** ≥ 3.0 pour la persistance
-- *(Optionnel)* Clé API **Anthropic** pour l'agent IA
+- Navigateur moderne avec support **WebGL 2**
+- *(Optionnel)* Instance **Omeka S** ≥ 3.0
+- *(Optionnel)* Clé API **Anthropic**
 
 ### 5.2 Installation
 
 ```bash
-# Cloner le dépôt
 git clone https://github.com/votre-org/nanotube-story.git
 cd nanotube-story
-
-# Installer les dépendances
 npm install
-
-# Copier et configurer les variables d'environnement
 cp .env.example .env
-# Éditer .env avec vos valeurs
-
-# Lancer le serveur de développement
-npm run dev
-# → http://localhost:3000
-
-# Build de production
-npm run build
-
-# Prévisualiser le build
-npm run preview
+npm run dev   # → http://localhost:3000
 ```
 
 ### 5.3 Variables d'environnement
 
 ```env
-# .env
 VITE_ANTHROPIC_API_KEY=sk-ant-api03-…
 VITE_OMEKA_API_URL=http://omeka.example.com/api
 VITE_OMEKA_KEY_IDENTITY=aBcDeFgH
 VITE_OMEKA_KEY_CREDENTIAL=xYz12345
 VITE_OMEKA_ITEM_SET_ID=1
-```
-
-| Variable | Description | Obligatoire |
-|----------|-------------|:-----------:|
-| `VITE_ANTHROPIC_API_KEY` | Clé API Claude (Anthropic) | Non |
-| `VITE_OMEKA_API_URL` | URL de base de l'API Omeka S | Non |
-| `VITE_OMEKA_KEY_IDENTITY` | Identifiant de clé Omeka S | Non |
-| `VITE_OMEKA_KEY_CREDENTIAL` | Mot de passe de clé Omeka S | Non |
-| `VITE_OMEKA_ITEM_SET_ID` | ID du jeu d'items cible | Non |
-
-> **Note :** Les clés peuvent aussi être saisies directement dans l'interface via le bouton ⚙ → elles sont persistées dans `localStorage`.
-
-### 5.4 Dépendances npm
-
-```json
-{
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "d3": "^7.9.0",
-    "three": "^0.177.0"
-  },
-  "devDependencies": {
-    "vite": "^6.3.5"
-  }
-}
 ```
 
 ---
@@ -317,371 +210,251 @@ VITE_OMEKA_ITEM_SET_ID=1
 ### 6.1 Interface principale
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│ ⬡ NanoTubeStory  [+Carte] [💾Sauver] [📂Charger] [⬇Exporter]      │
-│                  [3D] [Hex] [⊞]                    ● Omeka S  [⚙]  │
-├──────────────┬─────────────────────────────────┬────────────────────┤
-│ CARTOGRAPHIE │                                 │ PROPRIÉTÉS         │
-│              │                                 │ Chiralité (m,n)    │
-│  Grille SVG  │      Scène 3D (Three.js)        │ Type / Diamètre    │
-│  hexagonale  │      avec nanotubes             │ Conductivité       │
-│  D3.js       │      et grille                  │ Band gap           │
-│              │                                 │                    │
-│ GRILLE       │                            [⌖]  │ ANALYSE (D3)       │
-│ Rayon: 5     │                            [⊞]  │ ▦ Distribution     │
-│ Orientation  │                            [A]  │ ▦ Diamètres        │
-│              │                            [📷] │                    │
-│              │                                 │ OMEKA S            │
-├──────────────┴─────────────────────────────────┴────────────────────┤
-│ 🤖 Agent Mastra              [EN ATTENTE]                       [▲] │
-│ [Demandez à l'agent…]               [Envoyer] [💡Suggérer] [⚡Opt.] │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ⬡ NanoTubeStory  [+Carte] [💾Sauver] [📂Charger] [⬇Exporter]              │
+│                  [3D] [Hex] [⊞]                        ● Omeka S  [⚙]      │
+├──────────────┬───────────────────────────────────┬────────────┬─────────────┤
+│ CARTOGRAPHIE │                                   │ PROPRIÉTÉS │ HEXAGONE    │
+│              │                                   │ Chiralité  │ DU NANOTUBE │
+│  Grille SVG  │    Scène 3D (Three.js)            │ Type       │ (slide-over)│
+│  hexagonale  │    nanotubes avec réseau           │ Diamètre   │             │
+│  D3.js       │    honeycomb graphène              │ Conduct.   │ Template    │
+│              │                                   │ Band gap   │ Omeka S     │
+│ GRILLE       │                              [⌖]  │            │             │
+│ Rayon: 5     │                              [⊞]  │ ANALYSE    │ Nanotube    │
+│ Orientation  │                              [A]  │ ▦ Types    │ horizontal  │
+│              │                              [📷] │ ▦ Diam.    │ ⬡ Créer     │
+├──────────────┴───────────────────────────────────┴────────────┴─────────────┤
+│ 🤖 Agent Mastra              [EN ATTENTE]                               [▲] │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 Panneau gauche — Cartographie hexagonale
-
-| Élément | Action |
-|---------|--------|
-| **Double-clic** sur une cellule | Ajoute un nanotube aléatoire |
-| **Clic simple** sur une cellule | Sélectionne (affiche les propriétés) |
-| **Scroll** | Zoom sur la grille SVG |
-| **Glisser** | Panoramique de la grille |
-| **Rayon (1–15)** | Recrée la grille (efface les tubes) |
-| **Orientation** | Bascule Pointy-top / Flat-top |
-
-### 6.3 Viewport 3D (Three.js)
+### 6.2 Viewport 3D — interactions
 
 | Contrôle | Action |
 |----------|--------|
 | **Clic + glisser** | Rotation orbitale |
 | **Molette** | Zoom |
-| **Clic droit + glisser** | Panoramique |
-| **Clic sur un tube** | Sélectionne le nanotube |
+| **Clic sur un hexagone du tube** | Ouvre le panel "Hexagone du nanotube" |
+| **Clic sur la grille** | Sélectionne la cellule hexagonale |
 | **⌖** | Réinitialise la caméra |
-| **⊞** | Affiche/masque la grille et les contours |
 | **📷** | Capture la scène en PNG |
 
-### 6.4 Panneau droit — Éditeur de nanotube
-
-```
-Chiralité (m, n) : [5] [5]
-Type :             [ARMCHAIR]        ← mis à jour en temps réel
-
-Longueur (nm) :    ●────────────  20
-Rotation (°) :     ●────────────   0
-Couleur :          [████████████]
-
-Diamètre     : 0.678 nm
-Conductivité : Métallique
-Band gap     : 0 eV
-
-[Appliquer]  [Supprimer]
-```
+### 6.3 Éditeur de nanotube (panneau droit)
 
 Les propriétés physiques (diamètre, conductivité, band gap) se recalculent automatiquement dès que vous modifiez `m` ou `n`.
 
-### 6.5 Vues disponibles
-
-| Bouton | Vue | Description |
-|--------|-----|-------------|
-| **3D** | Viewport seul | Plein écran Three.js |
-| **Hex** | Grille seule | Plein écran SVG 2D |
-| **⊞** | Partagée | Grille à gauche + 3D au centre |
-
-### 6.6 Workflow typique
+### 6.4 Workflow typique
 
 ```
 1. Choisir un rayon de grille (ex. 5)
 2. Double-cliquer sur des cellules pour placer des nanotubes
 3. Sélectionner un tube → modifier (m,n) → [Appliquer]
-4. Consulter les graphiques D3 (distribution, diamètres)
-5. Demander une analyse à l'agent IA : [⚡ Optimiser]
+4. Cliquer sur un hexagone du tube → panel slide-over
+   a. Choisir un resource template Omeka S → remplir les champs → [Sauver]
+   b. Ou cliquer [⬡ Créer nanotube] → génère un tube enfant perpendiculaire
+5. Cliquer un hexagone du tube enfant → même panel → tube petit-enfant (récursif)
 6. Saisir un titre → [💾 Sauver] (Omeka S)
 ```
 
 ---
 
-## 7. API Omeka S
+## 7. Hexagones interactifs sur le tube
 
-> 📐 Voir aussi : [DIAGRAMS.md — CRUD Omeka S](./DIAGRAMS.md#6-crud-omeka-s--séquence-complète) et [Cycle de vie](./DIAGRAMS.md#7-cycle-de-vie-dune-cartographie)
+Cette fonctionnalité permet d'interagir avec chaque hexagone individuel de la surface d'un nanotube.
 
-[Omeka S](https://omeka.org/s/) est un système de gestion de collections web. NanoTubeStory l'utilise comme backend de persistance via son **API REST**. Chaque cartographie est stockée comme un **Item** avec le vocabulaire **Dublin Core**.
+### 7.1 Principe
 
-### 7.1 Configuration
+Chaque nanotube affiché en 3D possède, en plus de son maillage visuel (liaisons C-C), un ensemble de **faces hexagonales invisibles** (`opacity: 0`) utilisées comme cibles du raycaster Three.js. Un clic sur un hexagone déclenche :
+
+1. Le calcul du **centre exact** de l'hexagone en coordonnées monde (via `localToWorld`)
+2. Le calcul de la **normale sortante** (direction radiale `(cos θ, 0, sin θ)` en espace local, transformée par `matrixWorld`)
+3. L'ouverture du **panel "Hexagone du nanotube"**
+
+### 7.2 Géométrie des faces cliquables (`buildTubeHexFaces`)
 
 ```
-URL API      : http://omeka.example.com/api
-Key Identity : aBcDeFgH          (dans Administration → API keys)
-Key Credential : xYz12345
-Item Set ID  : 1                 (le set qui contiendra les cartes)
+Pour chaque anneau hexagonal (i, j) du lattice :
+  Centre en 2D : cx = i·a1x + (j%2 ? a1x/2 : 0)
+                 cy = d + j·a2y
+  6 sommets projetés sur le cylindre (triangulation en éventail)
+  userData.isHexFace  = true
+  userData.hexFaceIdx = index unique
+  userData.hexFacePos = { i, j, cx, cy }
+  userData.tubeHexKey = hexKey du tube parent
 ```
 
-### 7.2 Endpoints utilisés
+### 7.3 Panel "Hexagone du nanotube"
+
+Le panel slide-over comporte deux sections :
+
+#### Section Template Omeka S
+
+| Champ | Description |
+|-------|-------------|
+| **Resource template** | Liste des templates récupérés via `/api/resource_templates` |
+| **Champs dynamiques** | Propriétés du template sélectionné, pré-remplies si déjà saisies |
+| **[Sauver dans Omeka S]** | Crée ou met à jour un Item Omeka S avec les valeurs saisies |
+
+#### Section Nanotube horizontal
+
+| Champ | Description |
+|-------|-------------|
+| **⌀ inscrit** | Diamètre du cercle inscrit de l'hexagone (calculé automatiquement) |
+| **Chiralité (m, n)** | Pré-rempli avec l'armchair le plus proche du diamètre inscrit |
+| **Longueur (nm)** | Longueur du tube enfant |
+| **Couleur** | Couleur du tube enfant |
+| **[⬡ Créer nanotube]** | Génère le tube enfant |
+
+### 7.4 Calcul du tube enfant
+
+#### Diamètre = cercle inscrit de l'hexagone
+
+Le rayon de l'hexagone (centre → sommet) vaut `d` (longueur de liaison). Le cercle inscrit (apothème) a pour rayon `√3·d/2`, soit un **diamètre = √3·d** en unités scène.
+
+Converti en nm :
+
+$$d_{enfant} = \frac{\pi \cdot d_{parent}}{n_{hex}}$$
+
+Pour trouver les indices armchair `(n,n)` les plus proches :
+
+$$n = \text{round}\!\left(\frac{\pi \cdot d_{enfant}}{a_0 \cdot \sqrt{3}}\right)$$
+
+**Exemple** : tube parent (9,0), `d = 0.705 nm` → `d_enfant ≈ 0.246 nm` → armchair **(2,2)**
+
+#### Position et orientation
+
+```
+hexCenterWorld = localCenter.applyMatrix4(tubeGroup.matrixWorld)
+hexNormalWorld = Vec3(cos θ, 0, sin θ).transformDirection(tubeGroup.matrixWorld)
+
+group.quaternion = setFromUnitVectors(Y, hexNormalWorld)
+group.position   = hexCenterWorld + hexNormalWorld × (length/2)
+                   ─────────────────────────────────────────────
+                   → base du tube à la surface de l'hexagone
+                   → tube s'étend perpendiculairement vers l'extérieur
+```
+
+### 7.5 Récursivité
+
+Les hexagones du tube enfant sont **eux-mêmes cliquables** selon le même mécanisme. La clé de chaque tube enfant (`faceKey = "hexKey:hexFaceIdx"`) permet :
+- De retrouver le modèle `Nanotube` dans `horizTubesData`
+- De calculer les indices chiraux du niveau suivant
+- De s'imbriquer récursivement sans limite de profondeur
+
+---
+
+## 8. API Omeka S
+
+[Omeka S](https://omeka.org/s/) est utilisé comme backend de persistance via son **API REST**.
+
+### 8.1 Endpoints utilisés
 
 | Méthode | Endpoint | Action |
 |---------|----------|--------|
 | `GET` | `/api` | Test de connexion |
-| `GET` | `/api/items?item_set_id=N&per_page=50` | Lister les cartographies |
+| `GET` | `/api/items?item_set_id=N` | Lister les cartographies |
 | `GET` | `/api/items/{id}` | Charger une cartographie |
-| `POST` | `/api/items` | Créer une nouvelle cartographie |
-| `PATCH` | `/api/items/{id}` | Mettre à jour une cartographie |
-| `DELETE` | `/api/items/{id}` | Supprimer une cartographie |
+| `POST` | `/api/items` | Créer une cartographie ou un hexagone |
+| `PATCH` | `/api/items/{id}` | Mettre à jour |
+| `DELETE` | `/api/items/{id}` | Supprimer |
+| `GET` | `/api/resource_templates` | Lister les templates de ressources |
+| `GET` | `/api/resource_templates/{id}` | Récupérer un template (avec propriétés) |
 
-### 7.3 Format de données
-
-Chaque cartographie est stockée comme un Item Omeka S :
+### 8.2 Format d'un hexagone sauvegardé
 
 ```json
 {
   "@type": ["o:Item"],
   "o:item_set": [{ "o:id": 1 }],
-  "dcterms:title": [{
-    "@value": "Ma cartographie CNT",
-    "type": "literal"
-  }],
-  "dcterms:description": [{
-    "@value": "{\"tubes\":[{\"m\":5,\"n\":5,\"length\":20,\"rotation\":0,\"color\":\"#22d3ee\",\"hexKey\":\"0,0,0\"},{\"m\":7,\"n\":0,...}],\"gridRadius\":5,\"orientation\":\"pointy\",\"version\":\"1.0\"}",
-    "type": "literal"
-  }],
-  "dcterms:subject": [{
-    "@value": "nanotube-cartography",
-    "type": "literal"
-  }]
+  "dcterms:title": [{ "@value": "Hex 0,0,0 [2,4]", "type": "literal" }],
+  "dcterms:description": [{ "@value": "{\"hexKey\":\"0,0,0\",\"hexFaceIdx\":42,...}", "type": "literal" }],
+  "dcterms:subject": [{ "@value": "nanotube:hex", "type": "literal" }],
+  "<terme_template>": [{ "@value": "valeur", "type": "literal" }]
 }
 ```
 
-> Le champ `dcterms:description` contient un **JSON sérialisé** avec la liste complète des nanotubes et les paramètres de la grille.
-
-### 7.4 Classe OmekaClient
+### 8.3 Classe OmekaClient — nouvelles méthodes
 
 ```js
-import { OmekaClient } from './src/api/omeka.js';
+// Resource templates
+const templates = await client.listResourceTemplates();
+// → [{ id: 5, label: "Atome de carbone" }, ...]
 
-const client = new OmekaClient({
-  url: 'http://omeka.example.com/api',
-  keyId: 'aBcDeFgH',
-  keyCred: 'xYz12345',
-  itemSetId: 1,
+const tpl = await client.getResourceTemplate(5);
+// → { id, label, properties: [{ term, label, type }, ...] }
+
+// Sauvegarde d'un hexagone avec ses propriétés
+const item = await client.saveHexItem({
+  omekaId: null,          // null = création, nombre = mise à jour
+  title: "Hex 0,0,0 [2,4]",
+  templateId: 5,
+  hexKey: "0,0,0",
+  hexFaceIdx: 42,
+  properties: [
+    { term: "dcterms:description", value: "Atome de jonction" },
+    { term: "cito:citesForInformation", value: "C-C bond" },
+  ],
 });
-
-// Test de connexion
-const ok = await client.ping(); // → true/false
-
-// CRUD
-const maps  = await client.listMaps();       // [{ id, title, modified }]
-const map   = await client.getMap(42);       // { omekaId, title, tubes, gridRadius, ... }
-const saved = await client.saveMap(mapData); // crée ou met à jour
-await client.deleteMap(42);
 ```
 
 ---
 
-## 8. Agent IA (Anthropic SDK)
+## 9. Agent IA (Anthropic SDK)
 
-> 📐 Voir aussi : [DIAGRAMS.md — Boucle agentic](./DIAGRAMS.md#5-boucle-agentic--tool-use-anthropic)
+L'agent est implémenté avec l'**Anthropic SDK** en mode browser en utilisant les **Tool Use** de Claude, avec streaming temps réel.
 
-L'agent est implémenté avec l'**Anthropic SDK** en mode browser (`dangerouslyAllowBrowser: true`) en utilisant les **Tool Use** (function calling) de Claude. Il suit une architecture agentic multi-tours.
+### 9.1 Tools disponibles
 
-### 8.1 Tools disponibles
+- **`analyze_nanotube_config`** — Analyse statistique d'une configuration
+- **`suggest_nanotube`** — Suggère des paramètres `(m,n)` selon la propriété souhaitée
+- **`generate_configuration`** — Génère une configuration complète pour un objectif
 
-#### `analyze_nanotube_config`
-Analyse statistique d'une configuration.
-
-```json
-{
-  "name": "analyze_nanotube_config",
-  "input": {
-    "tubes": [{ "m": 5, "n": 5, "type": "armchair", "diameter": 0.678, "conductivity": "Métallique" }]
-  },
-  "output": {
-    "totalTubes": 6,
-    "metallicCount": 2,
-    "semiconductorCount": 4,
-    "avgDiameter": "0.621 nm",
-    "typeDistribution": { "armchair": 1, "zigzag": 3, "chiral": 2 },
-    "dominantType": "zigzag"
-  }
-}
-```
-
-#### `suggest_nanotube`
-Suggère des paramètres `(m,n)` selon la propriété souhaitée.
-
-| `desired_property` | Suggestion | Rationale |
-|--------------------|------------|-----------|
-| `metallic` | (5,5) | Armchair — conductivité métallique parfaite |
-| `semiconductor` | (6,2) | Chiral — Eg ≈ 0.5 eV |
-| `high-strength` | (10,10) | Grand diamètre, haute résistance |
-| `small-diameter` | (4,0) | Diamètre ~0.31 nm |
-| `large-diameter` | (15,15) | Diamètre ~2 nm |
-
-#### `generate_configuration`
-Génère une configuration complète pour un objectif.
-
-| `optimization_goal` | Tubes suggérés |
-|---------------------|----------------|
-| `max-conductivity` | (5,5), (10,10), (7,7), (9,9)… |
-| `max-semiconductor` | (6,2), (8,3), (7,0), (9,3)… |
-| `mixed` | Mix armchair + chiral + zigzag |
-| `uniform-diameter` | Tous (6,6) — diamètre constant |
-
-### 8.2 Boucle agentic multi-tours
+### 9.2 Boucle agentic multi-tours
 
 ```
 streamAgentResponse(apiKey, userMessage, onDelta, onTool)
 │
-├── Tour 1 : Envoi au modèle claude-sonnet-4-6
-│   ├── Stream text_delta → onDelta(chunk)    [affichage temps réel]
-│   ├── Si stop_reason = "end_turn" → FIN
-│   └── Si stop_reason = "tool_use" :
-│       ├── Exécuter tool localement (executeTool)
-│       ├── onTool(name, input, result)       [log dans UI]
-│       └── Ajouter tool_result aux messages
+├── Tour 1 : Envoi au modèle
+│   ├── Stream text_delta → onDelta(chunk)
+│   └── Si tool_use → executeTool() → tool_result → Tour 2
 │
-├── Tour 2 : Réponse post-outil (stream)
-│   └── …
-│
-└── Tour 3 max : Sécurité anti-boucle infinie
-```
-
-### 8.3 Exemples de requêtes
-
-```
-# Boutons intégrés
-[💡 Suggérer]  → "La configuration actuelle contient principalement
-                  des nanotubes de type 'zigzag'. Suggère une
-                  amélioration pour optimiser la conductivité globale."
-
-[⚡ Optimiser] → "Optimise la disposition de N nanotubes sur M cellules
-                  hexagonales pour maximiser les propriétés semi-
-                  conductrices. Distribution actuelle: {...}"
-
-# Requêtes libres
-"Explique pourquoi le nanotube armchair (5,5) est toujours métallique."
-"Quelle configuration hexagonale maximise la densité de nanotubes semi-conducteurs ?"
-"Compare les propriétés électroniques de (6,2) et (7,0)."
-"Quel (m,n) donne le band gap le plus proche de 1 eV ?"
-```
-
-### 8.4 Prompt système
-
-L'agent dispose d'un prompt système complet couvrant :
-- Classification par chiralité (armchair/zigzag/chiral)
-- Formules physiques (diamètre, conductivité, band gap)
-- Coordonnées hexagonales cube `(q,r,s)`
-- Consigne de réponse en français, concise et scientifique
-
----
-
-## 9. Référence des modules
-
-### `src/hex/hex.js`
-
-```js
-class Hex(q, r, s)
-```
-
-Hexagone en coordonnées cube. `q + r + s === 0` obligatoire.
-
-| Méthode | Signature | Description |
-|---------|-----------|-------------|
-| `add` | `(b: Hex) → Hex` | Addition vectorielle |
-| `subtract` | `(b: Hex) → Hex` | Soustraction |
-| `scale` | `(k: number) → Hex` | Mise à l'échelle |
-| `length` | `() → number` | Distance à l'origine |
-| `distance` | `(b: Hex) → number` | Distance entre deux hex |
-| `neighbor` | `(dir: 0–5) → Hex` | Voisin dans une direction |
-| `neighbors` | `() → Hex[]` | Les 6 voisins |
-| `linedraw` | `(b: Hex) → Hex[]` | Tracé de ligne |
-| `key` | `() → string` | Clé unique `"q,r,s"` |
-
-```js
-class Layout(orientation, size: Point, origin: Point)
-```
-
-| Méthode | Description |
-|---------|-------------|
-| `hexToPixel(h)` | Coordonnées cube → `Point` en pixels |
-| `pixelToHex(p)` | Pixel → `Hex` (avec arrondi FractionalHex) |
-| `polygonCorners(h)` | Tableau des 6 sommets d'un hexagone |
-| `polygonPath(h)` | Chemin SVG `M…L…Z` |
-
-```js
-// Constantes
-LAYOUT_POINTY  // Orientation pointy-top (défaut)
-LAYOUT_FLAT    // Orientation flat-top
-
-// Générateurs
-hexSpiral(center: Hex, radius: number) → Hex[]
-hexRing(center: Hex, radius: number) → Hex[]
+└── Tour 3 max : Sécurité anti-boucle
 ```
 
 ---
 
-### `src/hex/hexMap.js`
-
-```js
-class HexMap(svgElement: SVGElement)
-```
-
-| Méthode | Description |
-|---------|-------------|
-| `build(radius, orientation)` | Construit et rend la grille SVG |
-| `setTube(hexKey, nanotube)` | Place un tube (re-rendu auto) |
-| `removeTube(hexKey)` | Retire un tube |
-| `selectHex(key)` | Sélectionne programmatiquement |
-| `onSelect(cb)` | Callback `(hexKey: string) => void` |
-| `onAddTube(cb)` | Callback sur double-clic |
-| `getStats()` | `{ total, byType, hexCount }` |
-| `clear()` | Vide la carte |
-
----
-
-### `src/nanotube/nanotube.js`
-
-```js
-class Nanotube({ m, n, length, rotation, color, hexKey })
-```
-
-| Propriété | Type | Description |
-|-----------|------|-------------|
-| `diameter` | `number` (nm) | `(a₀/π)√(m²+mn+n²)` |
-| `chiralAngle` | `number` (°) | Angle chiral en degrés |
-| `type` | `'armchair'│'zigzag'│'chiral'` | Classification |
-| `conductivity` | `'Métallique'│'Semi-conducteur'` | Propriété électronique |
-| `isMetallic` | `boolean` | Raccourci |
-| `bandGap` | `number` (eV) | 0 si métallique, `0.9/d` sinon |
-| `atomCount` | `number` | Estimation du nombre d'atomes C |
-
-```js
-// Méthodes
-nanotube.toJSON()                // → objet sérialisable
-Nanotube.fromJSON(data)          // Désérialisation
-nanotube.toOmeka(itemSetId)      // Format Item Omeka S
-Nanotube.fromOmeka(item)         // Depuis un Item Omeka S
-nanotube.clone()                 // Copie profonde
-
-// Utilitaire
-randomNanotube(hexKey)           // Nanotube aléatoire parmi les types courants
-```
-
----
+## 10. Référence des modules
 
 ### `src/nanotube/geometry.js`
 
 ```js
+// Construction principale
 buildNanotubeGroup(nanotube: Nanotube) → THREE.Group
 ```
 
 Le groupe contient :
 - **Tube principal** — `CylinderGeometry` avec `MeshPhysicalMaterial` (metalness selon conductivité)
-- **Réseau carbone** — `LineSegments` approximant le lattice hexagonal enroulé
-- **Capuchons** — `SphereGeometry` aux deux extrémités
-- **Glow** — cylindre légèrement plus grand, `BackSide`, très transparent
+- **Réseau carbone** — `LineSegments` : lattice honeycomb graphène exact (zigzag), projeté sur le cylindre
+- **Capuchons** — `SphereGeometry` hémisphériques aux deux extrémités
+- **Glow** — cylindre halo légèrement plus grand, `BackSide`, très transparent
+- **`userData.nanotube`** — référence au modèle physique (utilisée par le raycaster)
 
 ```js
-buildHexBase(corners: Point[], color) → THREE.Mesh    // Plan hexagonal
-buildHexOutline(corners: Point[], color) → THREE.Line  // Contour filaire
+// Faces hexagonales cliquables
+buildTubeHexFaces(nanotube: Nanotube, radius: number, height: number) → THREE.Mesh[]
+```
+
+Génère un tableau de meshes `MeshBasicMaterial({ opacity: 0 })` couvrant chaque anneau hexagonal de la surface. Chaque mesh porte :
+- `userData.isHexFace = true`
+- `userData.hexFaceIdx` — index unique
+- `userData.hexFacePos` — `{ i, j, cx, cy }` (position dans le lattice 2D)
+- `userData.tubeHexKey` — clé du tube parent (posé par `scene3d.js`)
+
+```js
+// Utilitaires
+buildHexBase(corners, color) → THREE.Mesh    // Plan hexagonal (grille 2D)
+buildHexOutline(corners, color) → THREE.Line  // Contour filaire
 NM_SCALE = 2.5  // Facteur nm → unités scène
 ```
 
@@ -696,44 +469,49 @@ class Scene3D(canvas: HTMLCanvasElement)
 | Méthode | Description |
 |---------|-------------|
 | `buildGrid(hexes, orientation)` | Construit la grille 3D |
-| `setTube(hexKey, nanotube)` | Place/remplace un tube (dispose l'ancien) |
-| `removeTube(hexKey)` | Retire et libère les ressources GPU |
+| `setTube(hexKey, nanotube)` | Place/remplace un tube + crée ses faces cliquables |
+| `removeTube(hexKey)` | Retire le tube et supprime les faces de `hexFaceObjects` |
+| `addHorizontalTube(nanotube, hexCenter, hexNormal, faceKey)` | Tube enfant orienté selon la normale de l'hexagone |
 | `updateTube(hexKey, nanotube)` | Alias de `setTube` |
 | `highlightTube(hexKey)` | Surbrillance par `emissive` |
+| `onSelect(cb)` | Callback clic sur cellule de la grille |
+| `onTubeHexSelect(cb)` | Callback clic sur hexagone du tube — reçoit `{ hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld }` |
 | `toggleGrid(show?)` | Affiche/masque grille et contours |
 | `resetCamera()` | Position par défaut `(80, 120, 160)` |
 | `screenshot()` | `data:image/png` |
-| `onSelect(cb)` | Callback clic sur tube 3D |
-| `dispose()` | Nettoyage complet (ResizeObserver, renderer) |
+| `dispose()` | Nettoyage complet |
 
-**Paramètres de scène :**
-```js
-renderer.toneMapping = ACESFilmicToneMapping  // Rendu cinématique
-renderer.toneMappingExposure = 1.2
-scene.fog = Fog(0x0a0e17, 400, 900)           // Brouillard ambiant
-camera = PerspectiveCamera(45°, aspect, 0.1, 2000)
+**Priorité du raycaster :**
+1. Faces hexagonales de tube (`hexFaceObjects`) — déclenche `onTubeHexSelect`
+2. Cellules de la grille hexagonale — déclenche `onSelect`
+
+**`addHorizontalTube` — géométrie :**
+```
+quaternion = setFromUnitVectors(Y_axis, hexNormal)
+position   = hexCenter + hexNormal × (length × NM_SCALE / 2)
+             ───────────────────────────────────────────────
+             → base du tube à la surface de l'hexagone parent
 ```
 
 ---
 
-### `src/charts/charts.js`
+### `src/app.js`
 
 ```js
-class NanoCharts(distContainer: HTMLElement, propsContainer: HTMLElement)
+class App
 ```
+
+#### Nouvelles méthodes (v1.1)
 
 | Méthode | Description |
 |---------|-------------|
-| `updateDistribution(tubes)` | Barres verticales : nombre par type |
-| `updateProperties(tubes)` | Barres horizontales : diamètres (nm) |
-| `update(tubesMap: Map)` | Met à jour les deux graphiques |
-
-Les couleurs utilisées :
-```js
-armchair → '#22d3ee'  // cyan
-zigzag   → '#facc15'  // jaune
-chiral   → '#818cf8'  // violet
-```
+| `_onTubeHexSelect(info)` | Reçoit le clic d'hexagone, calcule la chiralité enfant, ouvre le panel |
+| `_computeChildTubeChirality(hexKey)` | Calcule `(m, n)` armchair depuis l'hexagone inscrit du tube parent ou d'un tube enfant |
+| `_loadTemplates()` | Charge la liste des resource templates Omeka S (une seule fois) |
+| `_onTemplateChange(templateId)` | Charge et affiche les champs du template sélectionné |
+| `_renderTemplateFields(properties, savedValues)` | Génère les `<input>` dynamiques du template |
+| `_saveHexToOmeka()` | Sauvegarde les propriétés de l'hexagone via `OmekaClient.saveHexItem` |
+| `_spawnHorizontalTube()` | Crée le tube enfant avec les paramètres du panel |
 
 ---
 
@@ -745,99 +523,90 @@ class OmekaClient({ url, keyId, keyCred, itemSetId })
 
 | Méthode | Signature | Description |
 |---------|-----------|-------------|
-| `configure(cfg)` | `(config) → void` | Mise à jour dynamique |
 | `ping()` | `() → Promise<boolean>` | Test connexion |
-| `listMaps()` | `() → Promise<{id,title,modified}[]>` | Liste les cartes |
-| `getMap(id)` | `(number) → Promise<MapData>` | Charge une carte |
-| `saveMap(data)` | `(MapData) → Promise<Item>` | Crée ou met à jour |
+| `listMaps()` | `() → Promise<{id,title,modified}[]>` | Liste les cartographies |
+| `getMap(id)` | `(number) → Promise<MapData>` | Charge une cartographie |
+| `saveMap(data)` | `(MapData) → Promise<Item>` | Crée ou met à jour une cartographie |
 | `deleteMap(id)` | `(number) → Promise<void>` | Supprime |
+| `listResourceTemplates()` | `() → Promise<{id,label}[]>` | Liste les templates |
+| `getResourceTemplate(id)` | `(number) → Promise<Template>` | Template + propriétés |
+| `saveHexItem(hexData)` | `(HexData) → Promise<Item>` | Sauvegarde un hexagone |
 
-```js
-// Helpers localStorage
-loadOmekaConfig() → object
-saveOmekaConfig(cfg: object) → void
+```ts
+type Template = {
+  id: number,
+  label: string,
+  properties: { term: string, label: string, type: string }[]
+}
+
+type HexData = {
+  omekaId: number | null,
+  templateId: number,
+  title: string,
+  hexKey: string,
+  hexFaceIdx: number,
+  hexFacePos: { i, j, cx, cy },
+  properties: { term: string, value: string }[]
+}
 ```
 
 ---
 
-### `src/agents/agents.js`
-
-```js
-streamAgentResponse(
-  apiKey: string,
-  userMessage: string,
-  onDelta: (chunk: string) => void,
-  onTool: (name: string, input: object, result: object) => void
-) → Promise<void>
-```
-
-```js
-// Exports utilitaires
-TOOLS        // Tableau des définitions de tools (Anthropic format)
-executeTool(name: string, input: object) → object  // Exécuteur local
-```
-
----
-
-## 10. Glossaire
+## 11. Glossaire
 
 | Terme | Définition |
 |-------|------------|
+| **Apothème** | Rayon du cercle inscrit dans un hexagone régulier = `√3/2 × circumradius` |
 | **Armchair** | Nanotube avec `m = n`. Vecteur chiral à 30° — toujours métallique |
-| **Band gap (Eg)** | Énergie séparant bande de valence et bande de conduction. `Eg = 0` pour les métaux |
-| **Chiralité (m,n)** | Paire d'entiers définissant l'enroulement du graphène. Détermine toutes les propriétés |
-| **Coordonnées cube** | Système `(q,r,s)` avec `q+r+s=0` pour grilles hexagonales. Optimal pour les algorithmes |
-| **Dublin Core** | Vocabulaire de métadonnées standard utilisé par Omeka S pour décrire les ressources |
-| **FractionalHex** | Version décimale des coordonnées cube, utilisée pour l'interpolation et l'arrondi |
+| **Band gap (Eg)** | Énergie séparant bande de valence et bande de conduction |
+| **Chiralité (m,n)** | Paire d'entiers définissant l'enroulement du graphène |
+| **Circumradius** | Rayon du cercle circonscrit d'un hexagone = `d` (longueur de liaison C-C dans le lattice) |
+| **Coordonnées cube** | Système `(q,r,s)` avec `q+r+s=0` pour grilles hexagonales |
+| **Dublin Core** | Vocabulaire de métadonnées standard utilisé par Omeka S |
+| **faceKey** | Clé composite `"hexKey:hexFaceIdx"` identifiant un hexagone sur un tube |
+| **FractionalHex** | Version décimale des coordonnées cube, utilisée pour l'arrondi |
 | **Graphène** | Feuille monoatomique de carbone en réseau hexagonal. Base structurelle des CNT |
-| **Layout** | Transformation mathématique hex → pixels (taille, orientation, origine) |
-| **MWNT** | *Multi-Walled NanoTube* — nanotube multi-parois, couches concentriques (espacement 0.34 nm) |
-| **Omeka S** | CMS de collections web open-source avec API REST. Stockage des cartographies |
+| **hexCenterWorld** | Centre d'un hexagone de tube exprimé en coordonnées monde Three.js |
+| **hexNormalWorld** | Vecteur normal sortant d'un hexagone de tube, en coordonnées monde |
+| **Honeycomb** | Réseau en nid d'abeille — structure du graphène, base du lattice CNT |
+| **matrixWorld** | Matrice de transformation complète (position + rotation + scale) d'un objet Three.js |
+| **MWNT** | *Multi-Walled NanoTube* — nanotube multi-parois |
+| **Omeka S** | CMS de collections web open-source avec API REST |
 | **OrbitControls** | Contrôle caméra Three.js (rotation orbitale, zoom, panoramique) |
-| **PBR** | *Physically Based Rendering* — rendu physiquement réaliste (metalness, roughness) |
-| **Semi-conducteur** | Matériau à band gap positif. Conductivité contrôlable par dopage ou température |
-| **SWNT** | *Single-Walled NanoTube* — nanotube à paroi unique. Diamètre typique 0.44–6 nm |
-| **Tight-binding** | Modèle quantique approximatif pour calculer la structure de bande des CNT |
+| **PBR** | *Physically Based Rendering* — rendu physiquement réaliste |
+| **Raycaster** | Mécanisme Three.js pour détecter les intersections rayon–géométrie (clics 3D) |
+| **Resource Template** | Modèle Omeka S définissant un ensemble de propriétés Dublin Core pour un type d'Item |
+| **Semi-conducteur** | Matériau à band gap positif. Conductivité contrôlable |
+| **SWNT** | *Single-Walled NanoTube* — nanotube à paroi unique |
+| **Tight-binding** | Modèle quantique pour calculer la structure de bande des CNT |
 | **Tool Use** | Mécanisme Anthropic API permettant à Claude d'appeler des fonctions côté client |
-| **Vecteur chiral** | `C = m·a₁ + n·a₂` sur la feuille de graphène. Sa norme = circonférence du tube |
-| **WebGL** | API JavaScript pour rendu 3D GPU-accéléré dans le navigateur. Utilisé par Three.js |
-| **Zigzag** | Nanotube avec `n = 0`. Vecteur chiral à 0° — semi-conducteur sauf si `m mod 3 = 0` |
+| **Vecteur chiral** | `C = m·a₁ + n·a₂` — sa norme = circonférence du tube |
+| **WebGL** | API JavaScript pour rendu 3D GPU-accéléré |
+| **Zigzag** | Nanotube avec `n = 0`. Vecteur chiral à 0° |
 
 ---
 
-## Annexe A — Raccourcis clavier
+## Annexe A — Raccourcis et interactions
 
-| Raccourci | Action |
-|-----------|--------|
-| `Double-clic` hex | Ajoute un nanotube aléatoire |
-| `Clic` hex / tube 3D | Sélectionne |
-| `Scroll` | Zoom (grille SVG ou scène 3D) |
-| `Entrée` dans l'agent | Envoie le message |
-| `⌖` | Réinitialise la caméra 3D |
+| Action | Résultat |
+|--------|----------|
+| **Double-clic** sur cellule hex | Ajoute un nanotube aléatoire |
+| **Clic** sur cellule hex / tube 3D | Sélectionne |
+| **Clic sur hexagone du tube** | Ouvre panel propriétés + spawn enfant |
+| **[⬡ Créer nanotube]** dans panel | Génère un tube perpendiculaire à l'hexagone |
+| **Scroll** | Zoom |
+| **Entrée** dans l'agent | Envoie le message |
+| **⌖** | Réinitialise la caméra 3D |
 
-## Annexe B — Extension et contribution
+## Annexe B — Extension
 
 ### Ajouter un nouveau type de tool agent
 
 ```js
 // src/agents/agents.js — section TOOLS
-{
-  name: 'mon_nouveau_tool',
-  description: 'Description pour le modèle',
-  input_schema: {
-    type: 'object',
-    properties: {
-      param1: { type: 'string', description: '…' },
-    },
-    required: ['param1'],
-  },
-}
-
-// Section executeTool — ajouter le cas
-case 'mon_nouveau_tool': {
-  const { param1 } = input;
-  return { result: `traitement de ${param1}` };
-}
+{ name: 'mon_tool', description: '…', input_schema: { … } }
+// Section executeTool
+case 'mon_tool': return { result: … };
 ```
 
 ### Ajouter une propriété physique au modèle CNT
@@ -845,15 +614,14 @@ case 'mon_nouveau_tool': {
 ```js
 // src/nanotube/nanotube.js
 get maNouvellePropriete() {
-  // Calcul basé sur this.m, this.n, this.diameter, etc.
-  return ...;
+  return /* calcul basé sur this.m, this.n, this.diameter */ ;
 }
 ```
 
 ### Connecter un backend alternatif
 
-Implémenter l'interface de `OmekaClient` avec les méthodes `ping`, `listMaps`, `getMap`, `saveMap`, `deleteMap`.
+Implémenter les méthodes `ping`, `listMaps`, `getMap`, `saveMap`, `deleteMap`, `listResourceTemplates`, `getResourceTemplate`, `saveHexItem` de `OmekaClient`.
 
 ---
 
-*Documentation générée pour NanoTubeStory v1.0 — Licence MIT*
+*Documentation NanoTubeStory v1.1 — Licence MIT*
