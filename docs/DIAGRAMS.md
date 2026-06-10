@@ -51,7 +51,7 @@ graph TB
         end
 
         subgraph SceneModule["🎬 Module 3D"]
-            SCENE["scene3d.js\nScene3D\nraycaster étendu\naddHorizontalTube"]
+            SCENE["scene3d.js\nScene3D\nraycaster étendu\naddChildTube"]
         end
 
         subgraph ChartModule["📊 Module Charts"]
@@ -234,7 +234,7 @@ classDiagram
         +buildGrid(hexes, orient)
         +setTube(key, tube)
         +removeTube(key)
-        +addHorizontalTube(tube, center, normal, faceKey)
+        +addChildTube(tube, center, normal, faceKey)
         +onSelect(cb)
         +onTubeHexSelect(cb)
         +screenshot() string
@@ -259,7 +259,7 @@ classDiagram
         +init()
         +_onTubeHexSelect(info)
         +_computeChildTubeChirality(hexKey)
-        +_spawnHorizontalTube()
+        +_spawnChildTube()
         +_saveHexToOmeka()
         +_loadTemplates()
     }
@@ -559,9 +559,9 @@ sequenceDiagram
         App->>Panel: ✓ Sauvegardé #99
     else Tube enfant
         User->>Panel: Clique [⬡ Créer nanotube]
-        Panel->>App: _spawnHorizontalTube()
+        Panel->>App: _spawnChildTube()
         App->>App: Nanotube({m,n,length,color})
-        App->>Scene: addHorizontalTube(tube,\nhexCenterWorld, hexNormalWorld, faceKey)
+        App->>Scene: addChildTube(tube,\nhexCenterWorld, hexNormalWorld, faceKey)
         Scene->>Scene: quaternion = setFromUnitVectors(Y, normal)\nposition = center + normal × halfLen\nbuildTubeHexFaces() → faces cliquables
         Scene-->>App: group (dans horizTubes)
         App->>App: horizTubesData.set(faceKey, tube)

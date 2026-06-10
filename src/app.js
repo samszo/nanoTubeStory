@@ -158,8 +158,8 @@ export class App {
 
   // ── Clic sur hexagone du tube ──────────────────────────────────────
 
-  _onTubeHexSelect({ hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld }) {
-    this._activeHexFace = { hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld };
+  _onTubeHexSelect({ hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld, faceCentroidWorld }) {
+    this._activeHexFace = { hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld, faceCentroidWorld };
     const faceKey = `${hexKey}:${hexFaceIdx}`;
 
     document.getElementById('hf-tube-key').textContent = hexKey;
@@ -278,22 +278,25 @@ export class App {
     }
   }
 
-  _spawnHorizontalTube() {
+  _spawnChildTube() {
     if (!this._activeHexFace) return;
-    const { hexKey, hexFaceIdx, hexCenterWorld, hexNormalWorld } = this._activeHexFace;
+    const { hexKey, hexFaceIdx, hexCenterWorld, hexNormalWorld, faceCentroidWorld } = this._activeHexFace;
     const faceKey = `${hexKey}:${hexFaceIdx}`;
 
-    const m      = parseInt(document.getElementById('hf-horiz-m').value) || 5;
-    const n      = parseInt(document.getElementById('hf-horiz-n').value) || 5;
-    const length = parseFloat(document.getElementById('hf-horiz-length').value) || 20;
-    const color  = document.getElementById('hf-horiz-color').value;
+    const m          = parseInt(document.getElementById('hf-horiz-m').value) || 5;
+    const n          = parseInt(document.getElementById('hf-horiz-n').value) || 5;
+    const length     = parseFloat(document.getElementById('hf-horiz-length').value) || 20;
+    const color      = document.getElementById('hf-horiz-color').value;
+    const centerMode = document.getElementById('hf-center-mode').value;
 
-    // Utiliser le centre et la normale exacts calculés lors du clic
-    const center = hexCenterWorld || { x: 0, y: 0, z: 0 };
+    // Choisir le centre selon l'option sélectionnée
+    const center = centerMode === 'centroid'
+      ? (faceCentroidWorld || hexCenterWorld || { x: 0, y: 0, z: 0 })
+      : (hexCenterWorld || { x: 0, y: 0, z: 0 });
     const normal = hexNormalWorld || { x: 1, y: 0, z: 0 };
 
     const tube  = new Nanotube({ m, n, length, color, rotation: 0 });
-    const group = this.scene3d.addHorizontalTube(tube, center, normal, faceKey);
+    const group = this.scene3d.addChildTube(tube, center, normal, faceKey);
     this.horizTubes.set(faceKey, group);
     this.horizTubesData = this.horizTubesData || new Map();
     this.horizTubesData.set(faceKey, tube);
@@ -589,7 +592,7 @@ export class App {
       this._onTemplateChange(e.target.value);
     });
     document.getElementById('hf-save-omeka').addEventListener('click', () => this._saveHexToOmeka());
-    document.getElementById('hf-spawn-tube').addEventListener('click', () => this._spawnHorizontalTube());
+    document.getElementById('hf-spawn-tube').addEventListener('click', () => this._spawnChildTube());
     document.getElementById('hf-horiz-length').addEventListener('input', e => {
       document.getElementById('hf-horiz-length-val').textContent = e.target.value;
     });

@@ -83,7 +83,7 @@ function buildCarbonLattice(nanotube, radius, height, segments) {
   const d = circumference / (nHex * Math.sqrt(3));
 
   // Vecteurs du réseau hexagonal (orientation zigzag, axe du tube = y)
-  const a1x = Math.sqrt(3) * d;       // vecteur a1 (horizontal)
+  const a1x = Math.sqrt(3) * d;       // vecteur a1 (Child)
   const a2x = Math.sqrt(3) * d / 2;   // composante x de a2
   const a2y = 1.5 * d;                // composante y de a2
 

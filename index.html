@@ -189,9 +189,9 @@
         <div id="hf-omeka-status" class="hf-status"></div>
       </div>
 
-      <!-- Nanotube horizontal -->
+      <!-- Nanotube enfant -->
       <div class="panel-section">
-        <h4>Nanotube horizontal</h4>
+        <h4>Nanotube enfant</h4>
         <p class="text-muted" style="margin-bottom:8px">Émettre un nanotube depuis cet hexagone.</p>
         <div id="hf-horiz-diameter-info" class="text-muted" style="font-size:11px;margin-bottom:6px"></div>
         <div class="field-group">
@@ -206,6 +206,12 @@
             <span id="hf-horiz-length-val">20</span>
           </label>
           <label>Couleur <input type="color" id="hf-horiz-color" value="#818cf8" /></label>
+          <label>Centrage de l'hexagone enfant
+            <select id="hf-center-mode">
+              <option value="junction">Point de rencontre des 3 faces</option>
+              <option value="centroid">Centroïde de la face cliquée</option>
+            </select>
+          </label>
         </div>
         <div class="field-actions">
           <button id="hf-spawn-tube" class="btn btn-primary btn-sm">⬡ Créer nanotube</button>

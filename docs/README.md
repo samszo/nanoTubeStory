@@ -222,7 +222,7 @@ VITE_OMEKA_ITEM_SET_ID=1
 │              │                                   │ Band gap   │ Omeka S     │
 │ GRILLE       │                              [⌖]  │            │             │
 │ Rayon: 5     │                              [⊞]  │ ANALYSE    │ Nanotube    │
-│ Orientation  │                              [A]  │ ▦ Types    │ horizontal  │
+│ Orientation  │                              [A]  │ ▦ Types    │ Child  │
 │              │                              [📷] │ ▦ Diam.    │ ⬡ Créer     │
 ├──────────────┴───────────────────────────────────┴────────────┴─────────────┤
 │ 🤖 Agent Mastra              [EN ATTENTE]                               [▲] │
@@ -296,7 +296,7 @@ Le panel slide-over comporte deux sections :
 | **Champs dynamiques** | Propriétés du template sélectionné, pré-remplies si déjà saisies |
 | **[Sauver dans Omeka S]** | Crée ou met à jour un Item Omeka S avec les valeurs saisies |
 
-#### Section Nanotube horizontal
+#### Section Nanotube Child
 
 | Champ | Description |
 |-------|-------------|
@@ -471,7 +471,7 @@ class Scene3D(canvas: HTMLCanvasElement)
 | `buildGrid(hexes, orientation)` | Construit la grille 3D |
 | `setTube(hexKey, nanotube)` | Place/remplace un tube + crée ses faces cliquables |
 | `removeTube(hexKey)` | Retire le tube et supprime les faces de `hexFaceObjects` |
-| `addHorizontalTube(nanotube, hexCenter, hexNormal, faceKey)` | Tube enfant orienté selon la normale de l'hexagone |
+| `addChildTube(nanotube, hexCenter, hexNormal, faceKey)` | Tube enfant orienté selon la normale de l'hexagone |
 | `updateTube(hexKey, nanotube)` | Alias de `setTube` |
 | `highlightTube(hexKey)` | Surbrillance par `emissive` |
 | `onSelect(cb)` | Callback clic sur cellule de la grille |
@@ -485,7 +485,7 @@ class Scene3D(canvas: HTMLCanvasElement)
 1. Faces hexagonales de tube (`hexFaceObjects`) — déclenche `onTubeHexSelect`
 2. Cellules de la grille hexagonale — déclenche `onSelect`
 
-**`addHorizontalTube` — géométrie :**
+**`addChildTube` — géométrie :**
 ```
 quaternion = setFromUnitVectors(Y_axis, hexNormal)
 position   = hexCenter + hexNormal × (length × NM_SCALE / 2)
@@ -511,7 +511,7 @@ class App
 | `_onTemplateChange(templateId)` | Charge et affiche les champs du template sélectionné |
 | `_renderTemplateFields(properties, savedValues)` | Génère les `<input>` dynamiques du template |
 | `_saveHexToOmeka()` | Sauvegarde les propriétés de l'hexagone via `OmekaClient.saveHexItem` |
-| `_spawnHorizontalTube()` | Crée le tube enfant avec les paramètres du panel |
+| `_spawnChildTube()` | Crée le tube enfant avec les paramètres du panel |
 
 ---
 

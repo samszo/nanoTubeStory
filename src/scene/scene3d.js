@@ -126,6 +126,32 @@ export class Scene3D {
         let hexNormalWorld = faceHits[0].point.clone()
           .sub(mesh.parent.position).setY(0).normalize();
 
+        // Centroïde pondéré par les aires des triangles (formule de Shoelace 3D).
+        // Sur un cylindre, les 4 triangles du fan n'ont pas la même aire :
+        // la pondération déplace le centroïde par rapport à la moyenne des sommets.
+        // Buffer layout (fan depuis pts[0]) : indices 0,1,2 | 3,4,5 | 6,7,8 | 9,10,11
+        // pts distincts : p0=idx0, p1=idx1, p2=idx2, p3=idx5, p4=idx8, p5=idx11
+        let faceCentroidWorld = faceHits[0].point.clone();
+        {
+          const pos  = mesh.geometry.attributes.position;
+          const p0   = new THREE.Vector3().fromBufferAttribute(pos, 0);
+          const ring = [1, 2, 5, 8, 11].map(i => new THREE.Vector3().fromBufferAttribute(pos, i));
+          let totalArea = 0;
+          const weighted = new THREE.Vector3();
+          const ab = new THREE.Vector3(), ac = new THREE.Vector3();
+          for (let k = 0; k < 4; k++) {
+            const pB = ring[k], pC = ring[k + 1];
+            ab.subVectors(pB, p0);
+            ac.subVectors(pC, p0);
+            const area = ab.clone().cross(ac).length() / 2;
+            const triCentroid = new THREE.Vector3().addVectors(p0, pB).add(pC).divideScalar(3);
+            weighted.addScaledVector(triCentroid, area);
+            totalArea += area;
+          }
+          if (totalArea > 0) weighted.divideScalar(totalArea);
+          faceCentroidWorld = weighted.applyMatrix4(mesh.matrixWorld);
+        }
+
         if (nanotube && hexFacePos) {
           const r     = nanotube.diameter * NM_TO_SCENE * 8 / 2;
           const theta = hexFacePos.cx / r;
@@ -146,6 +172,7 @@ export class Scene3D {
           worldPos:      faceHits[0].point,
           hexCenterWorld,
           hexNormalWorld,
+          faceCentroidWorld,
         }));
         return;
       }
@@ -272,7 +299,7 @@ export class Scene3D {
    * - orienté selon hexNormal (perpendiculaire à la face de l'hexagone)
    * - sa base (extrémité proche) commence à la surface du tube parent
    */
-  addHorizontalTube(nanotube, hexCenter, hexNormal, faceKey) {
+  addChildTube(nanotube, hexCenter, hexNormal, faceKey) {
     const group = buildNanotubeGroup(nanotube);
 
     // Aligner l'axe Y du tube sur la normale sortante
