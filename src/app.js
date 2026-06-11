@@ -158,8 +158,8 @@ export class App {
 
   // ── Clic sur hexagone du tube ──────────────────────────────────────
 
-  _onTubeHexSelect({ hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld, faceCentroidWorld }) {
-    this._activeHexFace = { hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld, faceCentroidWorld };
+  _onTubeHexSelect({ hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld, faceCentroidWorld, loopCentroidWorld }) {
+    this._activeHexFace = { hexKey, hexFaceIdx, hexFacePos, worldPos, hexCenterWorld, hexNormalWorld, faceCentroidWorld, loopCentroidWorld };
     const faceKey = `${hexKey}:${hexFaceIdx}`;
 
     document.getElementById('hf-tube-key').textContent = hexKey;
@@ -280,7 +280,7 @@ export class App {
 
   _spawnChildTube() {
     if (!this._activeHexFace) return;
-    const { hexKey, hexFaceIdx, hexCenterWorld, hexNormalWorld, faceCentroidWorld } = this._activeHexFace;
+    const { hexKey, hexFaceIdx, hexCenterWorld, hexNormalWorld, faceCentroidWorld, loopCentroidWorld } = this._activeHexFace;
     const faceKey = `${hexKey}:${hexFaceIdx}`;
 
     const m          = parseInt(document.getElementById('hf-horiz-m').value) || 5;
@@ -290,9 +290,9 @@ export class App {
     const centerMode = document.getElementById('hf-center-mode').value;
 
     // Choisir le centre selon l'option sélectionnée
-    const center = centerMode === 'centroid'
-      ? (faceCentroidWorld || hexCenterWorld || { x: 0, y: 0, z: 0 })
-      : (hexCenterWorld || { x: 0, y: 0, z: 0 });
+    const center = centerMode === 'centroid' ? (faceCentroidWorld  || hexCenterWorld || { x: 0, y: 0, z: 0 })
+                 : centerMode === 'loop'     ? (loopCentroidWorld  || hexCenterWorld || { x: 0, y: 0, z: 0 })
+                 :                             (hexCenterWorld || { x: 0, y: 0, z: 0 });
     const normal = hexNormalWorld || { x: 1, y: 0, z: 0 };
 
     const tube  = new Nanotube({ m, n, length, color, rotation: 0 });
@@ -557,6 +557,7 @@ export class App {
     // Viewport controls
     document.getElementById('btn-reset-camera').addEventListener('click', () => this.scene3d.resetCamera());
     document.getElementById('btn-toggle-grid').addEventListener('click', () => this.scene3d.toggleGrid());
+    document.getElementById('btn-toggle-hexfaces').addEventListener('click', () => this.scene3d.toggleHexFaces());
     document.getElementById('btn-screenshot').addEventListener('click', () => {
       const url = this.scene3d.screenshot();
       const a = document.createElement('a'); a.href = url; a.download = 'nanotube-scene.png'; a.click();

@@ -15,8 +15,9 @@ export class Scene3D {
     this.tubeObjects = new Map(); // hexKey → THREE.Group
     this.hexObjects  = new Map(); // hexKey → THREE.Group (base + outline)
     this.selectedKey = null;
-    this.showGrid    = true;
-    this.showLabels  = false;
+    this.showGrid      = true;
+    this.showLabels    = false;
+    this.showHexFaces  = false;
     this.orientation = 'pointy';
     this._onSelectCallbacks    = [];
     this._onTubeHexCallbacks   = [];
@@ -98,9 +99,66 @@ export class Scene3D {
   }
 
   _initRaycaster() {
-    this.raycaster = new THREE.Raycaster();
-    this.mouse = new THREE.Vector2();
-    this.canvas.addEventListener('click', e => this._onCanvasClick(e));
+    this.raycaster    = new THREE.Raycaster();
+    this.raycaster.params.Line.threshold = 0.8; // seuil de proximité pour les LineLoops
+    this.mouse        = new THREE.Vector2();
+    this._hoveredHexFace = null; // mesh face actuellement survolé
+    this.canvas.addEventListener('click',     e => this._onCanvasClick(e));
+    this.canvas.addEventListener('mousemove', e => this._onCanvasMouseMove(e));
+  }
+
+  /** Retourne face meshes + leur LineLoop enfant comme cibles de raycasting. */
+  _buildHexTargets() {
+    const targets = [];
+    this.hexFaceObjects.forEach(meshes => {
+      meshes.forEach(m => {
+        targets.push(m);
+        if (m.userData.outline) targets.push(m.userData.outline);
+      });
+    });
+    return targets;
+  }
+
+  /**
+   * Normalise le hit : si l'objet touché est un LineLoop (isHexOutline),
+   * remonte au mesh parent (isHexFace). Retourne null si non reconnu.
+   */
+  _resolveHexFaceMesh(obj) {
+    if (!obj) return null;
+    if (obj.userData.isHexFace)    return obj;
+    if (obj.userData.isHexOutline) return obj.parent?.userData.isHexFace ? obj.parent : null;
+    return null;
+  }
+
+  _onCanvasMouseMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    this.mouse.x = ((e.clientX - rect.left) / rect.width)  *  2 - 1;
+    this.mouse.y = -((e.clientY - rect.top)  / rect.height) *  2 + 1;
+
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    const hits = this.raycaster.intersectObjects(this._buildHexTargets());
+    const hit  = this._resolveHexFaceMesh(hits.length > 0 ? hits[0].object : null);
+
+    // Quitter le mesh précédent → outline visible, point central + arêtes cachés
+    if (this._hoveredHexFace && this._hoveredHexFace !== hit) {
+      const ud = this._hoveredHexFace.userData;
+      if (ud.outline)     { ud.outline.visible     = true;  }
+      if (ud.centerPoint) { ud.centerPoint.visible  = false; }
+      if (ud.radialEdges) { ud.radialEdges.visible  = false; }
+      this._hoveredHexFace.material.opacity = this.showHexFaces ? 0.12 : 0;
+      this._hoveredHexFace = null;
+    }
+
+    // Entrer sur un nouveau mesh → outline caché, point central + arêtes visibles
+    if (hit && hit !== this._hoveredHexFace) {
+      this._hoveredHexFace = hit;
+      const ud = hit.userData;
+      if (ud.outline)     { ud.outline.visible     = false; }
+      if (ud.centerPoint) { ud.centerPoint.visible  = true;  }
+      if (ud.radialEdges) { ud.radialEdges.visible  = true;  }
+      hit.material.opacity = 0.12; // légère surbrillance de la face
+    }
   }
 
   _onCanvasClick(e) {
@@ -110,14 +168,12 @@ export class Scene3D {
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // Priorité 1 : clic sur une face hexagonale de tube
-    const faceTargets = [];
-    this.hexFaceObjects.forEach(meshes => faceTargets.push(...meshes));
-    const faceHits = this.raycaster.intersectObjects(faceTargets);
+    // Priorité 1 : clic sur une face hexagonale de tube (mesh ou LineLoop)
+    const faceHits = this.raycaster.intersectObjects(this._buildHexTargets());
     if (faceHits.length > 0) {
-      const mesh   = faceHits[0].object;
-      const hexKey = mesh.userData.tubeHexKey;
-      if (hexKey && mesh.parent) {
+      const mesh   = this._resolveHexFaceMesh(faceHits[0].object);
+      const hexKey = mesh?.userData.tubeHexKey;
+      if (mesh && hexKey && mesh.parent) {
         const nanotube    = mesh.parent.userData.nanotube;
         const hexFacePos  = mesh.userData.hexFacePos;
 
@@ -126,30 +182,19 @@ export class Scene3D {
         let hexNormalWorld = faceHits[0].point.clone()
           .sub(mesh.parent.position).setY(0).normalize();
 
-        // Centroïde pondéré par les aires des triangles (formule de Shoelace 3D).
-        // Sur un cylindre, les 4 triangles du fan n'ont pas la même aire :
-        // la pondération déplace le centroïde par rapport à la moyenne des sommets.
-        // Buffer layout (fan depuis pts[0]) : indices 0,1,2 | 3,4,5 | 6,7,8 | 9,10,11
-        // pts distincts : p0=idx0, p1=idx1, p2=idx2, p3=idx5, p4=idx8, p5=idx11
+        // Centroïde local précalculé dans geometry.js (pondéré par aire, Shoelace 3D)
+        // → on projette simplement en espace monde
         let faceCentroidWorld = faceHits[0].point.clone();
-        {
-          const pos  = mesh.geometry.attributes.position;
-          const p0   = new THREE.Vector3().fromBufferAttribute(pos, 0);
-          const ring = [1, 2, 5, 8, 11].map(i => new THREE.Vector3().fromBufferAttribute(pos, i));
-          let totalArea = 0;
-          const weighted = new THREE.Vector3();
-          const ab = new THREE.Vector3(), ac = new THREE.Vector3();
-          for (let k = 0; k < 4; k++) {
-            const pB = ring[k], pC = ring[k + 1];
-            ab.subVectors(pB, p0);
-            ac.subVectors(pC, p0);
-            const area = ab.clone().cross(ac).length() / 2;
-            const triCentroid = new THREE.Vector3().addVectors(p0, pB).add(pC).divideScalar(3);
-            weighted.addScaledVector(triCentroid, area);
-            totalArea += area;
-          }
-          if (totalArea > 0) weighted.divideScalar(totalArea);
-          faceCentroidWorld = weighted.applyMatrix4(mesh.matrixWorld);
+        if (mesh.userData.faceCentroid) {
+          faceCentroidWorld = mesh.userData.faceCentroid.clone().applyMatrix4(mesh.matrixWorld);
+        }
+
+        // Centroïde du LineLoop : moyenne arithmétique des 6 sommets du contour
+        // → projeté en espace monde via la matrice monde du mesh (= même que parent)
+        let loopCentroidWorld = faceHits[0].point.clone();
+        const ol = mesh.userData.outline;
+        if (ol?.userData.centroid) {
+          loopCentroidWorld = ol.userData.centroid.clone().applyMatrix4(mesh.matrixWorld);
         }
 
         if (nanotube && hexFacePos) {
@@ -173,6 +218,7 @@ export class Scene3D {
           hexCenterWorld,
           hexNormalWorld,
           faceCentroidWorld,
+          loopCentroidWorld,
         }));
         return;
       }
@@ -263,7 +309,8 @@ export class Scene3D {
     const faces = buildTubeHexFaces(nanotube, radius, height);
     faces.forEach(m => {
       m.userData.tubeHexKey = hexKey;
-      // Les faces sont en coordonnées locales du tube → ajouter au groupe
+      // Colorier le contour hexagonal avec la couleur du tube (légèrement atténuée)
+      if (m.userData.outline) m.userData.outline.material.color.set(nanotube.color);
       tubeGroup.add(m);
     });
     this.hexFaceObjects.set(hexKey, faces);
@@ -325,7 +372,8 @@ export class Scene3D {
     const height   = nanotube.length * NM_TO_SCENE;
     const faces    = buildTubeHexFaces(nanotube, radius, height);
     faces.forEach(m => {
-      m.userData.tubeHexKey = faceKey; // clé = faceKey du tube parent
+      m.userData.tubeHexKey = faceKey;
+      if (m.userData.outline) m.userData.outline.material.color.set(nanotube.color);
       group.add(m);
     });
     this.hexFaceObjects.set(faceKey, faces);
@@ -345,6 +393,21 @@ export class Scene3D {
     this.showGrid = show ?? !this.showGrid;
     this.gridHelper.visible = this.showGrid;
     this.hexObjects.forEach(g => { g.children.filter(c => !c.userData.isBase).forEach(c => c.visible = this.showGrid); });
+  }
+
+  toggleHexFaces(show) {
+    this.showHexFaces = show ?? !this.showHexFaces;
+    this.hexFaceObjects.forEach(meshes => {
+      meshes.forEach(m => {
+        const ud = m.userData;
+        const hovered = m === this._hoveredHexFace;
+        // Outline : visible si pas survolé (état normal) ; opacité renforcée en mode debug
+        if (ud.outline)
+          ud.outline.material.opacity = this.showHexFaces ? 0.85 : 0.5;
+        // Face légèrement transparente en mode debug
+        m.material.opacity = (this.showHexFaces && !hovered) ? 0.12 : 0;
+      });
+    });
   }
 
   resetCamera() {

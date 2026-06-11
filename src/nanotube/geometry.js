@@ -23,7 +23,7 @@ export function buildNanotubeGroup(nanotube) {
     metalness: nanotube.isMetallic ? 0.9 : 0.1,
     roughness: 0.3,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0,
     side: THREE.DoubleSide,
     wireframe: false,
   });
@@ -32,7 +32,8 @@ export function buildNanotubeGroup(nanotube) {
 
   // ── Grille hexagonale (réseau carbone) ─────────────────────────────
   const latticeGeo = buildCarbonLattice(nanotube, radius, height, segments);
-  const latticeMat = new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(1.6), linewidth: 1 });
+  //const latticeMat = new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(1.6), linewidth: 1 });
+  const latticeMat = new THREE.LineBasicMaterial({ color: 'red', linewidth: 1 });
   const lattice = new THREE.LineSegments(latticeGeo, latticeMat);
   group.add(lattice);
 
@@ -45,17 +46,16 @@ export function buildNanotubeGroup(nanotube) {
     opacity: 0.75,
   });
   const capGeo = new THREE.SphereGeometry(radius, segments, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-
   const capTop = new THREE.Mesh(capGeo, capMat);
   capTop.position.y = height / 2;
-  group.add(capTop);
+  //group.add(capTop);
 
   const capBot = new THREE.Mesh(capGeo, capMat);
   capBot.position.y = -height / 2;
   capBot.rotation.x = Math.PI;
-  group.add(capBot);
+  //group.add(capBot);
 
-  // ── Glow (halo lumineux) ────────────────────────────────────────────
+  /* ── Glow (halo lumineux) ────────────────────────────────────────────
   const glowGeo = new THREE.CylinderGeometry(radius * 1.3, radius * 1.3, height, segments, 1, true);
   const glowMat = new THREE.MeshBasicMaterial({
     color,
@@ -64,6 +64,7 @@ export function buildNanotubeGroup(nanotube) {
     side: THREE.BackSide,
   });
   group.add(new THREE.Mesh(glowGeo, glowMat));
+  */
 
   // ── Axe de rotation ────────────────────────────────────────────────
   group.rotation.y = (nanotube.rotation * Math.PI) / 180;
@@ -156,22 +157,88 @@ export function buildTubeHexFaces(nanotube, radius, height) {
         return new THREE.Vector3(Math.cos(theta) * radius, cy + dy, Math.sin(theta) * radius);
       });
 
-      // Triangulation en éventail depuis pts[0] → 4 triangles
+      // ── Point central : moyenne arithmétique des 6 sommets projetés ──────
+      // Ce point est le centroïde du contour (loopCentroid) et sert de pivot
+      // pour la nouvelle triangulation en 6 triangles symétriques.
+      const center = new THREE.Vector3();
+      pts.forEach(p => center.add(p));
+      center.divideScalar(6);
+
+      // ── Triangulation en 6 triangles autour du centre ────────────────────
+      // Triangle k : (center, pts[k], pts[(k+1) % 6])
+      // → symétrie complète, normale cohérente, centroïde = center pour un hex régulier.
       const verts = [];
-      for (let k = 1; k <= 4; k++) {
-        verts.push(...pts[0].toArray(), ...pts[k].toArray(), ...pts[k + 1].toArray());
+      const _ab   = new THREE.Vector3();
+      const _ac   = new THREE.Vector3();
+      let   totalArea    = 0;
+      const faceCentroid = new THREE.Vector3();
+
+      for (let k = 0; k < 6; k++) {
+        const pA = center;
+        const pB = pts[k];
+        const pC = pts[(k + 1) % 6];
+
+        verts.push(...pA.toArray(), ...pB.toArray(), ...pC.toArray());
+
+        // Centroïde pondéré par aire (Shoelace 3D)
+        _ab.subVectors(pB, pA);
+        _ac.subVectors(pC, pA);
+        const area        = _ab.clone().cross(_ac).length() / 2;
+        const triCentroid = pA.clone().add(pB).add(pC).divideScalar(3);
+        faceCentroid.addScaledVector(triCentroid, area);
+        totalArea += area;
       }
+      if (totalArea > 0) faceCentroid.divideScalar(totalArea);
+
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
       geo.computeVertexNormals();
 
       const mesh = new THREE.Mesh(
         geo,
-        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide })
+        new THREE.MeshBasicMaterial({color: 'green', transparent: false, opacity: 0.5, side: THREE.DoubleSide })
       );
-      mesh.userData.isHexFace  = true;
-      mesh.userData.hexFaceIdx = idx - 1;
-      mesh.userData.hexFacePos = { i, j, cx, cy };
+      mesh.userData.isHexFace    = true;
+      mesh.userData.hexFaceIdx   = idx - 1;
+      mesh.userData.hexFacePos   = { i, j, cx, cy };
+      mesh.userData.center       = center;       // point central des 6 triangles
+      mesh.userData.faceCentroid = faceCentroid; // centroïde pondéré par aire
+
+      // ── Contour (LineLoop sur les 6 sommets) — visible par défaut ────────
+      const outlineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+      const outline    = new THREE.LineLoop(
+        outlineGeo,
+        new THREE.LineBasicMaterial({color: 'white', transparent: false, opacity: 1})
+      );
+      outline.userData.isHexOutline = true;
+      outline.userData.centroid     = center;
+      outline.visible = true;
+
+      // ── Point central — caché par défaut, visible au rollover ─────────────
+      const centerPointGeo = new THREE.BufferGeometry().setFromPoints([center]);
+      const centerPoint    = new THREE.Points(
+        centerPointGeo,
+        new THREE.PointsMaterial({ color: 0xf97316, size: 1.5, sizeAttenuation: true })
+      );
+      centerPoint.visible = false;
+
+      // ── Arêtes radiales center→pts[k] — cachées par défaut ───────────────
+      const radialPts = [];
+      pts.forEach(p => { radialPts.push(center, p); });
+      const radialGeo   = new THREE.BufferGeometry().setFromPoints(radialPts);
+      const radialEdges = new THREE.LineSegments(
+        radialGeo,
+        new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.8 })
+      );
+      radialEdges.visible = false;
+
+      mesh.add(outline);
+      mesh.add(centerPoint);
+      mesh.add(radialEdges);
+      mesh.userData.outline     = outline;
+      mesh.userData.centerPoint = centerPoint;
+      mesh.userData.radialEdges = radialEdges;
+
       meshes.push(mesh);
     }
   }
