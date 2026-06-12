@@ -23,6 +23,14 @@
         <button id="btn-view-3d" class="btn btn-active" title="Vue 3D">3D</button>
         <button id="btn-view-hex" class="btn" title="Vue hexagonale 2D">Hex</button>
         <button id="btn-view-split" class="btn" title="Vue fractionnée">⊞</button>
+        <div class="separator"></div>
+        <div class="agent-input-row toolbar-import">
+          <input type="file" id="import-file-input" accept=".json" style="display:none" />
+          <button id="btn-import-json"    class="btn" title="Importer une carte JSON">📥 Importer</button>
+          <button id="btn-export-json"    class="btn" title="Exporter la carte en JSON">📤 JSON</button>
+          <button id="btn-import-example" class="btn" title="Charger la carte d'exemple">📋 Exemple</button>
+          <span id="import-filename" style="font-size:11px;color:#7a8fa8;align-self:center"></span>
+        </div>
       </nav>
       <div class="header-right">
         <span id="status-indicator" class="status-dot status-ok" title="Connexion Omeka S"></span>
@@ -127,21 +135,15 @@
       </aside>
     </div>
 
-    <!-- BOTTOM — Mastra Agent Console -->
-    <div id="agent-panel">
-      <div class="agent-header" id="agent-toggle">
-        <span>🤖 Agent Mastra</span>
-        <span id="agent-status" class="badge badge-idle">En attente</span>
-        <button class="btn btn-sm" id="btn-collapse-agent">▲</button>
+    <!-- BOTTOM — Journal de traçage -->
+    <div id="trace-panel">
+      <div class="agent-header" id="trace-toggle">
+        <span>📋 Trace</span>
+        <span id="import-status" class="badge badge-idle">Prêt</span>
+        <button class="btn btn-sm" id="btn-collapse-trace">▲</button>
       </div>
-      <div id="agent-body">
-        <div id="agent-messages"></div>
-        <div class="agent-input-row">
-          <input type="text" id="agent-input" placeholder="Demandez à l'agent d'analyser ou générer une configuration…" />
-          <button id="btn-agent-send" class="btn btn-primary">Envoyer</button>
-          <button id="btn-agent-suggest" class="btn">💡 Suggérer</button>
-          <button id="btn-agent-optimize" class="btn">⚡ Optimiser</button>
-        </div>
+      <div id="trace-body">
+        <div id="import-log"></div>
       </div>
     </div>
   </div>

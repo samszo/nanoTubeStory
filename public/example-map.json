@@ -1,0 +1,156 @@
+{
+  "version": "1.1",
+  "title": "Exemple — Réseau CNT mixte",
+  "exportedAt": "2026-06-12T12:00:00.000Z",
+  "gridRadius": 3,
+  "orientation": "pointy",
+
+  "parentTubes": [
+    {
+      "hexKey": "0,0,0",
+      "m": 5, "n": 5,
+      "length": 25,
+      "rotation": 0,
+      "color": "#22d3ee",
+      "label": "Tube central — armchair métallique",
+      "omekaId": null
+    },
+    {
+      "hexKey": "1,-1,0",
+      "m": 6, "n": 2,
+      "length": 20,
+      "rotation": 30,
+      "color": "#818cf8",
+      "label": "Tube chiral semi-conducteur NE",
+      "omekaId": null
+    },
+    {
+      "hexKey": "1,0,-1",
+      "m": 7, "n": 0,
+      "length": 18,
+      "rotation": 60,
+      "color": "#facc15",
+      "label": "Tube zigzag semi-conducteur E",
+      "omekaId": null
+    },
+    {
+      "hexKey": "0,1,-1",
+      "m": 10, "n": 10,
+      "length": 30,
+      "rotation": 0,
+      "color": "#22d3ee",
+      "label": "Grand tube armchair métallique SE",
+      "omekaId": null
+    },
+    {
+      "hexKey": "-1,1,0",
+      "m": 8, "n": 3,
+      "length": 22,
+      "rotation": 45,
+      "color": "#818cf8",
+      "label": "Tube chiral SO",
+      "omekaId": null
+    },
+    {
+      "hexKey": "-1,0,1",
+      "m": 9, "n": 0,
+      "length": 16,
+      "rotation": 90,
+      "color": "#facc15",
+      "label": "Tube zigzag O",
+      "omekaId": null
+    },
+    {
+      "hexKey": "0,-1,1",
+      "m": 4, "n": 4,
+      "length": 20,
+      "rotation": 15,
+      "color": "#4ade80",
+      "label": "Petit tube armchair NO",
+      "omekaId": null
+    }
+  ],
+
+  "childTubes": [
+    {
+      "faceKey": "0,0,0:2",
+      "hexKey": "0,0,0",
+      "hexFaceIdx": 2,
+      "centerMode": "centroid",
+      "center": { "x": 3.8, "y": 31.25, "z": -2.2 },
+      "normal": { "x": 0.866, "y": 0.0, "z": -0.5 },
+      "tube": {
+        "m": 3, "n": 3,
+        "length": 12,
+        "rotation": 0,
+        "color": "#f87171",
+        "label": "Nanotube enfant armchair — face 2 du tube central",
+        "hexKey": null,
+        "omekaId": null
+      }
+    },
+    {
+      "faceKey": "0,0,0:5",
+      "hexKey": "0,0,0",
+      "hexFaceIdx": 5,
+      "centerMode": "junction",
+      "center": { "x": -3.8, "y": 31.25, "z": 2.2 },
+      "normal": { "x": -0.866, "y": 0.0, "z": 0.5 },
+      "tube": {
+        "m": 2, "n": 1,
+        "length": 10,
+        "rotation": 0,
+        "color": "#fb923c",
+        "label": "Nanotube enfant chiral — face 5 du tube central",
+        "hexKey": null,
+        "omekaId": null
+      }
+    },
+    {
+      "faceKey": "1,-1,0:3",
+      "hexKey": "1,-1,0",
+      "hexFaceIdx": 3,
+      "centerMode": "loop",
+      "center": { "x": 12.5, "y": 25.0, "z": 0.0 },
+      "normal": { "x": 0.0, "y": 0.0, "z": -1.0 },
+      "tube": {
+        "m": 4, "n": 0,
+        "length": 8,
+        "rotation": 0,
+        "color": "#a78bfa",
+        "label": "Nanotube enfant zigzag — face 3 du tube NE",
+        "hexKey": null,
+        "omekaId": null
+      }
+    }
+  ],
+
+  "hexFaceData": [
+    {
+      "faceKey": "0,0,0:2",
+      "templateId": null,
+      "omekaId": null,
+      "hexKey": "0,0,0",
+      "hexFaceIdx": 2,
+      "hexFacePos": { "i": 1, "j": 0 },
+      "properties": [
+        { "term": "dcterms:title",       "value": "Jonction A — face 2 tube central" },
+        { "term": "dcterms:description", "value": "Point de branchement vers le nanotube enfant armchair (3,3)" },
+        { "term": "dcterms:subject",     "value": "jonction:armchair" }
+      ]
+    },
+    {
+      "faceKey": "1,-1,0:3",
+      "templateId": null,
+      "omekaId": null,
+      "hexKey": "1,-1,0",
+      "hexFaceIdx": 3,
+      "hexFacePos": { "i": 0, "j": 1 },
+      "properties": [
+        { "term": "dcterms:title",       "value": "Jonction B — face 3 tube NE" },
+        { "term": "dcterms:description", "value": "Ramification vers le nanotube zigzag (4,0)" },
+        { "term": "dcterms:subject",     "value": "jonction:zigzag" }
+      ]
+    }
+  ]
+}

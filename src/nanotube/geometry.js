@@ -23,7 +23,7 @@ export function buildNanotubeGroup(nanotube) {
     metalness: nanotube.isMetallic ? 0.9 : 0.1,
     roughness: 0.3,
     transparent: true,
-    opacity: 0,
+    opacity: 0.4,
     side: THREE.DoubleSide,
     wireframe: false,
   });
@@ -32,8 +32,8 @@ export function buildNanotubeGroup(nanotube) {
 
   // ── Grille hexagonale (réseau carbone) ─────────────────────────────
   const latticeGeo = buildCarbonLattice(nanotube, radius, height, segments);
-  //const latticeMat = new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(1.6), linewidth: 1 });
-  const latticeMat = new THREE.LineBasicMaterial({ color: 'red', linewidth: 1 });
+  const latticeMat = new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(1.6), linewidth: 1 });
+  //const latticeMat = new THREE.LineBasicMaterial({ color: 'red', linewidth: 1 });
   const lattice = new THREE.LineSegments(latticeGeo, latticeMat);
   group.add(lattice);
 
@@ -146,8 +146,8 @@ export function buildTubeHexFaces(nanotube, radius, height) {
 
   for (let i = 0; i < iMax; i++) {
     for (let j = jMin; j <= jMax; j++) {
-      const cx = i * a1x + (((j % 2) + 2) % 2 ? a1x / 2 : 0);
-      const cy = d + j * a2y;
+      const cx = i * a1x + j * (a1x / 2);
+      const cy = j * a2y - d;
       idx++;
       if (cy + d < -height / 2 || cy - d > height / 2) continue;
 
@@ -196,7 +196,7 @@ export function buildTubeHexFaces(nanotube, radius, height) {
 
       const mesh = new THREE.Mesh(
         geo,
-        new THREE.MeshBasicMaterial({color: 'green', transparent: false, opacity: 0.5, side: THREE.DoubleSide })
+        new THREE.MeshBasicMaterial({transparent: true, opacity: 0.3, side: THREE.DoubleSide })
       );
       mesh.userData.isHexFace    = true;
       mesh.userData.hexFaceIdx   = idx - 1;

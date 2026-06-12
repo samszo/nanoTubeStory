@@ -7,7 +7,9 @@ import { Scene3D }        from './scene/scene3d.js';
 import { NanoCharts }     from './charts/charts.js';
 import { Nanotube, randomNanotube } from './nanotube/nanotube.js';
 import { OmekaClient, loadOmekaConfig, saveOmekaConfig } from './api/omeka.js';
-import { streamAgentResponse } from './agents/agents.js';
+
+/** Version du format JSON d'import/export */
+const MAP_JSON_VERSION = '1.1';
 
 export class App {
   constructor() {
@@ -16,14 +18,16 @@ export class App {
     this.charts   = null;
     this.omeka    = new OmekaClient();
     this.tubes    = new Map();   // hexKey → Nanotube
-    this.horizTubes = new Map(); // `${hexKey}:${hexFaceIdx}` → THREE.Group (nanotubes horizontaux)
-    this.hexFaceData = new Map(); // `${hexKey}:${hexFaceIdx}` → { omekaId, properties }
+    this.horizTubes = new Map(); // faceKey → THREE.Group (nanotubes enfants)
+    /** faceKey → { tube: Nanotube, center: {x,y,z}, normal: {x,y,z}, centerMode: string } */
+    this.horizTubesData = new Map();
+    this.hexFaceData = new Map(); // faceKey → { omekaId, templateId, properties }
     this.selectedKey = null;
     this.currentMapId = null;
     this.gridRadius   = 5;
     this.orientation  = 'pointy';
     this.view = '3d';
-    this._activeHexFace = null; // { hexKey, hexFaceIdx, hexFacePos, worldPos }
+    this._activeHexFace = null; // { hexKey, hexFaceIdx, hexFacePos, worldPos, … }
   }
 
   init() {
@@ -186,25 +190,22 @@ export class App {
 
   /** Calcule les indices chiraux (armchair) dont le diamètre = cercle inscrit de l'hexagone parent */
   _computeChildTubeChirality(hexKey) {
-    // Cherche d'abord dans les tubes de la grille, ensuite dans les tubes horizontaux
     const tube = this.tubes.get(hexKey)
-               || (this.horizTubesData && this.horizTubesData.get(hexKey));
+               || (this.horizTubesData.get(hexKey)?.tube);
     if (!tube) return { m: 5, n: 5, diameterNm: 0 };
     const NM_TO_SCENE = 2.5;
     const nHex = Math.max(6, tube.n + tube.m);
     const radius = tube.diameter * NM_TO_SCENE * 8 / 2;
     const circumference = 2 * Math.PI * radius;
     const d_scene = circumference / (nHex * Math.sqrt(3));
-    // Diamètre du cercle inscrit de l'hexagone (apothème × 2 = sqrt(3)*d)
     const inscribed_d_nm = Math.sqrt(3) * d_scene / (NM_TO_SCENE * 8);
-    // Armchair (n,n) : diameter = a0*sqrt(3)*n/π → n = π*d/(a0*sqrt(3))
     const n = Math.max(1, Math.round(Math.PI * inscribed_d_nm / (0.246 * Math.sqrt(3))));
     return { m: n, n, diameterNm: inscribed_d_nm };
   }
 
   async _loadTemplates() {
     const sel = document.getElementById('hf-template-select');
-    if (sel.options.length > 1) return; // déjà chargés
+    if (sel.options.length > 1) return;
     try {
       const templates = await this.omeka.listResourceTemplates();
       templates.forEach(t => {
@@ -213,9 +214,7 @@ export class App {
         opt.textContent = t.label;
         sel.appendChild(opt);
       });
-    } catch {
-      // Omeka non connecté : on laisse juste la valeur vide
-    }
+    } catch { /* Omeka non connecté */ }
   }
 
   async _onTemplateChange(templateId) {
@@ -289,7 +288,6 @@ export class App {
     const color      = document.getElementById('hf-horiz-color').value;
     const centerMode = document.getElementById('hf-center-mode').value;
 
-    // Choisir le centre selon l'option sélectionnée
     const center = centerMode === 'centroid' ? (faceCentroidWorld  || hexCenterWorld || { x: 0, y: 0, z: 0 })
                  : centerMode === 'loop'     ? (loopCentroidWorld  || hexCenterWorld || { x: 0, y: 0, z: 0 })
                  :                             (hexCenterWorld || { x: 0, y: 0, z: 0 });
@@ -298,11 +296,11 @@ export class App {
     const tube  = new Nanotube({ m, n, length, color, rotation: 0 });
     const group = this.scene3d.addChildTube(tube, center, normal, faceKey);
     this.horizTubes.set(faceKey, group);
-    this.horizTubesData = this.horizTubesData || new Map();
-    this.horizTubesData.set(faceKey, tube);
+    // Stocker tube + positionnement pour l'export JSON
+    this.horizTubesData.set(faceKey, { tube, center, normal, centerMode, hexKey, hexFaceIdx });
 
     document.getElementById('hex-face-panel').classList.add('hidden');
-    this._agentLog('system', `⬡ Nanotube (${m},${n}) depuis hex ${faceKey}`);
+    this._jsonLog('system', `⬡ Nanotube enfant (${m},${n}) ajouté sur ${faceKey}`);
   }
 
   // ── Vue ────────────────────────────────────────────────────────────
@@ -377,9 +375,9 @@ export class App {
       this.currentMapId = result?.['o:id'] || this.currentMapId;
       document.getElementById('omeka-item-id').textContent = this.currentMapId || '—';
       this._loadOmekaList();
-      this._agentLog('system', `💾 Carte sauvegardée (Omeka #${this.currentMapId})`);
+      this._jsonLog('system', `💾 Carte sauvegardée (Omeka #${this.currentMapId})`);
     } catch (e) {
-      this._agentLog('system', `❌ Erreur sauvegarde: ${e.message}`);
+      this._jsonLog('error', `❌ Erreur sauvegarde: ${e.message}`);
     }
   }
 
@@ -400,86 +398,202 @@ export class App {
         const tube = Nanotube.fromJSON(td);
         if (tube.hexKey) this._setTube(tube.hexKey, tube);
       });
-      this._agentLog('system', `📂 Carte chargée: ${data.title}`);
+      this._jsonLog('system', `📂 Carte Omeka chargée: ${data.title}`);
     } catch (e) {
-      this._agentLog('system', `❌ Erreur chargement: ${e.message}`);
+      this._jsonLog('error', `❌ Erreur chargement: ${e.message}`);
     }
   }
 
-  // ── Agent Mastra ───────────────────────────────────────────────────
+  // ── Import / Export JSON ───────────────────────────────────────────
 
-  async _sendAgentMessage(msg) {
-    if (!msg) return;
-    this._agentLog('user', msg);
-    document.getElementById('agent-status').className = 'badge badge-thinking';
-    document.getElementById('agent-status').textContent = 'Réflexion…';
-    document.getElementById('agent-input').value = '';
+  /**
+   * Exporte la carte complète (tubes parents + enfants + métadonnées hexFaces) en JSON.
+   * Déclenche un téléchargement du fichier.
+   * @returns {object} Le données JSON exportées
+   */
+  exportMapJSON() {
+    const title = document.getElementById('omeka-item-title').value || 'Cartographie NanoTube';
 
-    const tubesSummary = Array.from(this.tubes.values()).map(t => ({
-      m: t.m, n: t.n, type: t.type, diameter: +t.diameter.toFixed(3),
-      conductivity: t.conductivity, length: t.length, hexKey: t.hexKey,
-    }));
-    const fullMsg = `Configuration actuelle: ${tubesSummary.length} nanotubes sur grille rayon ${this.gridRadius}.\n${tubesSummary.length > 0 ? 'Tubes: ' + JSON.stringify(tubesSummary.slice(0, 10)) : ''}\n\n${msg}`;
+    const mapData = {
+      version:     MAP_JSON_VERSION,
+      title,
+      exportedAt:  new Date().toISOString(),
+      gridRadius:  this.gridRadius,
+      orientation: this.orientation,
 
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'agent-msg agent';
-    msgDiv.textContent = '';
-    document.getElementById('agent-messages').appendChild(msgDiv);
-    document.getElementById('agent-messages').scrollTop = 9999;
+      // Tubes parents (un par cellule hexagonale)
+      parentTubes: Array.from(this.tubes.values()).map(t => t.toJSON()),
 
-    try {
-      await streamAgentResponse(
-        this._getApiKey(),
-        fullMsg,
-        chunk => {
-          msgDiv.textContent += chunk;
-          document.getElementById('agent-messages').scrollTop = 9999;
-        },
-        (toolName, input, result) => {
-          this._agentLog('system', `🔧 Tool: ${toolName} → ${JSON.stringify(result).slice(0, 120)}…`);
+      // Tubes enfants (un par face hexagonale de tube)
+      childTubes: Array.from(this.horizTubesData.entries()).map(([faceKey, data]) => ({
+        faceKey,
+        hexKey:     data.hexKey,
+        hexFaceIdx: data.hexFaceIdx,
+        centerMode: data.centerMode || 'junction',
+        center:     { x: data.center.x, y: data.center.y, z: data.center.z },
+        normal:     { x: data.normal.x, y: data.normal.y, z: data.normal.z },
+        tube: data.tube.toJSON(),
+      })),
+
+      // Métadonnées Omeka S par face hexagonale
+      hexFaceData: Array.from(this.hexFaceData.entries()).map(([faceKey, fd]) => ({
+        faceKey,
+        templateId:  fd.templateId  || null,
+        omekaId:     fd.omekaId     || null,
+        hexKey:      fd.hexKey      || null,
+        hexFaceIdx:  fd.hexFaceIdx  !== undefined ? fd.hexFaceIdx : null,
+        hexFacePos:  fd.hexFacePos  || null,
+        properties:  fd.properties  || [],
+      })),
+    };
+
+    // Téléchargement automatique
+    const blob = new Blob([JSON.stringify(mapData, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `${title.replace(/\s+/g, '_')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    this._jsonLog('system', `📤 Exporté : ${mapData.parentTubes.length} tubes parents, ${mapData.childTubes.length} tubes enfants`);
+    return mapData;
+  }
+
+  /**
+   * Importe une carte depuis un objet JSON (déjà parsé).
+   * Recharge la grille, les tubes parents et enfants, les métadonnées.
+   * @param {object} mapData — données JSON parsées
+   */
+  importMapJSON(mapData) {
+    if (!mapData || typeof mapData !== 'object') {
+      this._jsonLog('error', '❌ Fichier JSON invalide');
+      return;
+    }
+
+    // ── Métadonnées ────────────────────────────────────────────────
+    const title       = mapData.title       || 'Carte importée';
+    const gridRadius  = mapData.gridRadius  || 5;
+    const orientation = mapData.orientation || 'pointy';
+
+    this.gridRadius  = gridRadius;
+    this.orientation = orientation;
+    document.getElementById('input-grid-radius').value = gridRadius;
+    document.getElementById('input-grid-orient').value = orientation;
+    document.getElementById('omeka-item-title').value  = title;
+    document.getElementById('omeka-item-id').textContent = '—';
+    this.currentMapId = null;
+
+    // ── Réinitialisation ────────────────────────────────────────────
+    this.tubes.clear();
+    this.horizTubesData.clear();
+    this.horizTubes.clear();
+    this.hexFaceData.clear();
+    this._buildGrid();
+
+    // ── Tubes parents ───────────────────────────────────────────────
+    const parents = mapData.parentTubes || mapData.tubes || [];
+    let parentCount = 0;
+    for (const td of parents) {
+      const tube = Nanotube.fromJSON(td);
+      if (tube.hexKey) { this._setTube(tube.hexKey, tube); parentCount++; }
+    }
+
+    // ── Tubes enfants ───────────────────────────────────────────────
+    const children = mapData.childTubes || [];
+    let childCount = 0;
+    for (const cd of children) {
+      if (!cd.faceKey || !cd.tube || !cd.center || !cd.normal) continue;
+      const tube  = Nanotube.fromJSON(cd.tube);
+      const group = this.scene3d.addChildTube(tube, cd.center, cd.normal, cd.faceKey);
+      this.horizTubes.set(cd.faceKey, group);
+      this.horizTubesData.set(cd.faceKey, {
+        tube,
+        center:     cd.center,
+        normal:     cd.normal,
+        centerMode: cd.centerMode || 'junction',
+        hexKey:     cd.hexKey,
+        hexFaceIdx: cd.hexFaceIdx,
+      });
+      childCount++;
+    }
+
+    // ── Métadonnées hexFaces ────────────────────────────────────────
+    for (const fd of (mapData.hexFaceData || [])) {
+      if (fd.faceKey) this.hexFaceData.set(fd.faceKey, fd);
+    }
+
+    this.charts.update(this.tubes);
+    this._jsonLog('system',
+      `✅ Importé "${title}" — ${parentCount} tubes parents, ${childCount} tubes enfants`);
+  }
+
+  /** Ouvre le sélecteur de fichier et importe le JSON choisi */
+  _importFromFile() {
+    const input = document.getElementById('import-file-input');
+    input.onchange = e => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      document.getElementById('import-filename').textContent = file.name;
+      document.getElementById('import-status').textContent  = 'Import…';
+      document.getElementById('import-status').className    = 'badge badge-thinking';
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          this.importMapJSON(data);
+          document.getElementById('import-status').textContent = 'Importé ✓';
+          document.getElementById('import-status').className   = 'badge badge-done';
+        } catch (err) {
+          this._jsonLog('error', `❌ Erreur de parsing : ${err.message}`);
+          document.getElementById('import-status').textContent = 'Erreur';
+          document.getElementById('import-status').className   = 'badge badge-err';
         }
-      );
-      if (!msgDiv.textContent) msgDiv.textContent = '(réponse vide)';
+        input.value = '';
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  /** Charge l'exemple JSON fourni avec l'application */
+  async _importExample() {
+    this._jsonLog('system', '⏳ Chargement de l\'exemple…');
+    try {
+      const res  = await fetch('/example-map.json');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      this.importMapJSON(data);
     } catch (e) {
-      msgDiv.textContent = `⚠ ${e.message}`;
+      this._jsonLog('error', `❌ Impossible de charger l'exemple : ${e.message}`);
     }
-
-    document.getElementById('agent-status').className = 'badge badge-done';
-    document.getElementById('agent-status').textContent = 'Prêt';
   }
 
-  _agentSuggest() {
-    const types = Array.from(this.tubes.values()).map(t => t.type);
-    const dominant = types.length ? types.sort().pop() : 'aucun';
-    this._sendAgentMessage(`La configuration actuelle contient principalement des nanotubes de type "${dominant}". Suggère une amélioration pour optimiser la conductivité globale.`);
-  }
-
-  _agentOptimize() {
-    const stats = this.hexMap.getStats();
-    this._sendAgentMessage(`Optimise la disposition de ${stats.total} nanotubes sur ${stats.hexCount} cellules hexagonales pour maximiser les propriétés semi-conductrices. Distribution actuelle: ${JSON.stringify(stats.byType)}`);
-  }
-
-  _agentLog(role, text) {
+  /** Ajoute un message dans le log du panneau import/export */
+  _jsonLog(type, text) {
+    const log = document.getElementById('import-log');
+    if (!log) return;
     const div = document.createElement('div');
-    div.className = `agent-msg ${role}`;
+    div.className = `agent-msg ${type === 'error' ? 'system' : type}`;
+    div.style.color = type === 'error' ? 'var(--red, #f87171)' : '';
     div.textContent = text;
-    document.getElementById('agent-messages').appendChild(div);
-    document.getElementById('agent-messages').scrollTop = 9999;
+    log.appendChild(div);
+    log.scrollTop = 9999;
   }
 
   // ── Paramètres ─────────────────────────────────────────────────────
 
   _loadSettings() {
     const cfg = loadOmekaConfig();
-    if (cfg.url)     this.omeka.configure(cfg);
-    if (cfg.url)     document.getElementById('set-omeka-url')?.setAttribute('value', cfg.url);
-    if (cfg.keyId)   document.getElementById('set-omeka-key-id')?.setAttribute('value', cfg.keyId);
+    if (cfg.url) this.omeka.configure(cfg);
+    if (cfg.url) document.getElementById('set-omeka-url')?.setAttribute('value', cfg.url);
+    if (cfg.keyId) document.getElementById('set-omeka-key-id')?.setAttribute('value', cfg.keyId);
     if (cfg.itemSetId) document.getElementById('set-omeka-set-id')?.setAttribute('value', cfg.itemSetId);
 
-    const envUrl  = import.meta.env?.VITE_OMEKA_API_URL;
-    const envKeyId = import.meta.env?.VITE_OMEKA_KEY_IDENTITY;
+    const envUrl    = import.meta.env?.VITE_OMEKA_URL;
+    const envKeyId  = import.meta.env?.VITE_OMEKA_KEY_IDENTITY;
     const envKeyCred = import.meta.env?.VITE_OMEKA_KEY_CREDENTIAL;
-    const envSetId = import.meta.env?.VITE_OMEKA_ITEM_SET_ID;
+    const envSetId  = import.meta.env?.VITE_OMEKA_ITEM_SET_ID;
     if (envUrl) this.omeka.configure({ url: envUrl, keyId: envKeyId, keyCred: envKeyCred, itemSetId: envSetId });
   }
 
@@ -492,15 +606,8 @@ export class App {
     };
     saveOmekaConfig(cfg);
     this.omeka.configure(cfg);
-    const apiKey = document.getElementById('set-anthropic-key').value;
-    if (apiKey) localStorage.setItem('anthropic-key', apiKey);
-    this.agent = createNanoAgent(this._getApiKey());
     document.getElementById('settings-panel').classList.add('hidden');
     this._pingOmeka();
-  }
-
-  _getApiKey() {
-    return localStorage.getItem('anthropic-key') || import.meta.env?.VITE_ANTHROPIC_API_KEY || '';
   }
 
   // ── Liaison UI ─────────────────────────────────────────────────────
@@ -563,21 +670,16 @@ export class App {
       const a = document.createElement('a'); a.href = url; a.download = 'nanotube-scene.png'; a.click();
     });
 
-    // Agent
-    document.getElementById('agent-toggle').addEventListener('click', e => {
+    // Import / Export JSON
+    document.getElementById('trace-toggle').addEventListener('click', e => {
       if (e.target.closest('button')) return;
-      document.getElementById('agent-panel').classList.toggle('collapsed');
-      document.getElementById('btn-collapse-agent').textContent =
-        document.getElementById('agent-panel').classList.contains('collapsed') ? '▼' : '▲';
+      document.getElementById('trace-body').classList.toggle('collapsed');
+      document.getElementById('btn-collapse-trace').textContent =
+        document.getElementById('trace-body').classList.contains('collapsed') ? '▼' : '▲';
     });
-    document.getElementById('btn-agent-send').addEventListener('click', () => {
-      this._sendAgentMessage(document.getElementById('agent-input').value.trim());
-    });
-    document.getElementById('agent-input').addEventListener('keydown', e => {
-      if (e.key === 'Enter') this._sendAgentMessage(e.target.value.trim());
-    });
-    document.getElementById('btn-agent-suggest').addEventListener('click', () => this._agentSuggest());
-    document.getElementById('btn-agent-optimize').addEventListener('click', () => this._agentOptimize());
+    document.getElementById('btn-import-json').addEventListener('click', () => this._importFromFile());
+    document.getElementById('btn-export-json').addEventListener('click', () => this.exportMapJSON());
+    document.getElementById('btn-import-example').addEventListener('click', () => this._importExample());
 
     // Settings
     document.getElementById('btn-save-settings').addEventListener('click', () => this._saveSettings());

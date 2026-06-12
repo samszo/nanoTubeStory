@@ -44,7 +44,7 @@ export class OmekaClient {
 
   async ping() {
     try {
-      await this._fetch(this._url('/api'));
+      await this._fetch(this._url('/api/items'));
       this.connected = true;
       return true;
     } catch {

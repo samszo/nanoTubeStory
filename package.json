@@ -1,6 +1,6 @@
 {
   "name": "nanotube-story",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Cartographies 3D de nanotubes de carbone sur grille hexagonale",
   "type": "module",
   "scripts": {
@@ -9,9 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.81",
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@mastra/core": "^0.10.0",
     "d3": "^7.9.0",
     "three": "^0.177.0"
   },
